@@ -8,7 +8,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(index src/main.cpp)
 set_target_properties(index PROPERTIES SUFFIX .html)
 
-target_link_options(index PUBLIC --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html) # specify html template
+string(JOIN "" shell_file ${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html)
+
+target_link_options(index PUBLIC -sEXPORTED_FUNCTIONS=_main,_draw_some_sites)
+target_link_options(index PUBLIC --shell-file ${shell_file}) # specify html template
 target_link_options(index PUBLIC -sMIN_WEBGL_VERSION=2) # use webgl2
 target_link_options(index PUBLIC -sOFFSCREENCANVAS_SUPPORT) # off screen canvas
 target_link_options(index PUBLIC --embed-file ${CMAKE_CURRENT_SOURCE_DIR}/src/shader@shader) # embed shader source files
@@ -21,6 +24,7 @@ target_compile_options(index PUBLIC -Weverything -Wno-c++98-compat -Wno-c++98-co
 # trigger recompile when shader files change
 file(GLOB shader_src CONFIGURE_DEPENDS src/shader/*)
 set_property(TARGET index PROPERTY LINK_DEPENDS ${shader_src})
+set_property(TARGET index PROPERTY LINK_DEPENDS ${shell_file})
 
 include(CTest)
 # Specify tests

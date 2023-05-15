@@ -27,7 +27,7 @@ struct Site {
     static constexpr std::size_t std140_padded_size = sizeof(float) * 8;
 };
 
-constexpr std::size_t SITE_NUM = 64;
+// constexpr std::size_t SITE_NUM = 1024;
 
 #define exec_and_check(func, ...)                             \
     do {                                                      \
@@ -39,7 +39,7 @@ constexpr std::size_t SITE_NUM = 64;
 
 static float get_random() {
     static std::mt19937 gen{std::random_device{}()};
-    std::uniform_real_distribution<float> real_dist(0., 1.);
+    static std::uniform_real_distribution<float> real_dist(0., 1.);
 
     return real_dist(gen);
 }
@@ -61,10 +61,10 @@ inline static auto& clip_coord(Vec<2, float>& coord) {
     return coord;
 }
 
-static auto& get_random_sites() {
+static auto& get_random_sites(std::size_t site_num) {
     auto& sites = get_sites();
     sites.clear();
-    sites.reserve(SITE_NUM);
+    sites.reserve(site_num);
 
     constexpr float ar =
         static_cast<float>(canvas_width) / static_cast<float>(canvas_height);
@@ -72,7 +72,7 @@ static auto& get_random_sites() {
         return Vec<2, float>{(get_random() - .5f) * ar, get_random() - .5f};
     };
 
-    for (std::size_t i = 0; i < SITE_NUM; ++i) {
+    for (std::size_t i = 0; i < site_num; ++i) {
         sites.emplace_back(random_pos(), random_color());
     }
     return sites;
@@ -110,6 +110,13 @@ static void draw() {
     // Draw the full-screen quad, to let OpenGL invoke fragment shader
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+extern "C" {
+void draw_some_sites(std::size_t num = get_sites().size()) {
+    get_random_sites(num);
+    draw();
+}
 }
 
 int main() {
@@ -199,8 +206,7 @@ int main() {
 
     auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event, void*) {
         if (key_event->code == std::string{"KeyF"}) {
-            get_random_sites();
-            draw();
+            draw_some_sites();
             return EM_TRUE;
         }
         return EM_FALSE;
@@ -217,7 +223,5 @@ int main() {
 
     std::cout << "Press F to get new random sites.\n";
 
-    get_random_sites();
-    draw();
     return 0;
 }
