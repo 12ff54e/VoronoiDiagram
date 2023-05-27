@@ -47,7 +47,7 @@ auto ShaderProgram::err_check(GLuint id, int t, const std::string& err) {
         std::cout << err
                   << (t == 0 ? " Shader compilation failed\n"
                              : "Program linkage failed\n")
-                  << info_log;
+                  << info_log << '\n';
     }
 
     return success;

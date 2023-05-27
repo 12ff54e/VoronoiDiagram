@@ -42,7 +42,9 @@ void main() {
     float point_size = 0.02f / sqrt(float(site_array_size));
 
     uint nearest_site_index = 0u;
+    uint second_nearest_site_index = 0u;
     float shortest_dist = 1.;
+    float second_shortest_dist = 1.;
     for(uint i = 0u; i < site_array_size; ++i) {
         float dist = distance(uv, sites[i].pos);
         if(dist < point_size + aa_width) {
@@ -50,10 +52,17 @@ void main() {
             render_smooth(dist, point_size, vec3(0.));
             return;
         } else if(dist < shortest_dist) {
+            second_shortest_dist = shortest_dist;
+            second_nearest_site_index = nearest_site_index;
             shortest_dist = dist;
             nearest_site_index = i;
-        } 
+        } else if(dist < second_shortest_dist) {
+            second_shortest_dist = dist;
+            second_nearest_site_index = i;
+        }
     }
 
-    frag_color = vec4(sites[nearest_site_index].color, 1.);
+    float dist = (second_shortest_dist - shortest_dist) * (second_shortest_dist + shortest_dist) / (2. * distance(sites[nearest_site_index].pos, sites[second_nearest_site_index].pos));
+    dist = smoothstep(-aa_width, aa_width, dist);
+    frag_color = vec4(mix(sites[second_nearest_site_index].color, sites[nearest_site_index].color, dist), 1.);
 }
