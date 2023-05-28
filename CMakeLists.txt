@@ -23,8 +23,8 @@ target_compile_options(index PUBLIC -Weverything -Wno-c++98-compat -Wno-c++98-co
 
 # trigger recompile when shader files change
 file(GLOB shader_src CONFIGURE_DEPENDS src/shader/*)
-set_property(TARGET index PROPERTY LINK_DEPENDS ${shader_src})
-set_property(TARGET index PROPERTY LINK_DEPENDS ${shell_file})
+set_property(TARGET index PROPERTY LINK_DEPENDS ${shader_src} ${shell_file})
+# set_property(TARGET index PROPERTY LINK_DEPENDS ${shell_file})
 
 include(CTest)
 # Specify tests

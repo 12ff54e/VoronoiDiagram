@@ -5,6 +5,9 @@ precision mediump float;
 
 uniform vec2 canvas_size;
 uniform uint site_array_size;
+uniform uint style;
+uniform float line_width;
+uniform vec3 line_color;
 
 struct Site {
     vec2 pos;
@@ -35,34 +38,52 @@ void main() {
     // starting from lower-left corner, where a is aspect ratio.
     // (Note: it depends on the qualifier `origin_upper_left` and `pixel_center_integer` of gl_FragCoord)
 
+    bool draw_site = bool(style & 1u);
+    bool draw_frame = bool(style & 2u);
+    bool draw_color = bool(style & 4u);
+
     vec3 background_color = color;
     frag_color = vec4(background_color, 1.0);
 
-    float aa_width = float(2) / canvas_size.y;
+    float aa_width = 1. / canvas_size.y;
     float point_size = 0.02f / sqrt(float(site_array_size));
 
-    uint nearest_site_index = 0u;
-    uint second_nearest_site_index = 0u;
-    float shortest_dist = 1.;
-    float second_shortest_dist = 1.;
+    uint indices[] = uint[3](0u, 0u, 0u);
+    float dists[] = float[3](1., 1., 1.);
     for(uint i = 0u; i < site_array_size; ++i) {
         float dist = distance(uv, sites[i].pos);
-        if(dist < point_size + aa_width) {
-            frag_color = vec4(sites[i].color,1.); // set current block color
+        if(dist < point_size + aa_width && draw_site) {
+            frag_color = vec4(sites[i].color, 1.); // set current block color
             render_smooth(dist, point_size, vec3(0.));
             return;
-        } else if(dist < shortest_dist) {
-            second_shortest_dist = shortest_dist;
-            second_nearest_site_index = nearest_site_index;
-            shortest_dist = dist;
-            nearest_site_index = i;
-        } else if(dist < second_shortest_dist) {
-            second_shortest_dist = dist;
-            second_nearest_site_index = i;
+        } else if(dist < dists[2]) {
+            dists[2] = dist;
+            indices[2] = i;
+            // bubble sort
+            for(int j = 1; j >= 0; --j) {
+                if(dists[j + 1] < dists[j]) {
+                    float dd = dists[j];
+                    uint ii = indices[j];
+                    dists[j] = dists[j + 1];
+                    dists[j + 1] = dd;
+                    indices[j] = indices[j + 1];
+                    indices[j + 1] = ii;
+                }
+            }
         }
     }
 
-    float dist = (second_shortest_dist - shortest_dist) * (second_shortest_dist + shortest_dist) / (2. * distance(sites[nearest_site_index].pos, sites[second_nearest_site_index].pos));
-    dist = smoothstep(-aa_width, aa_width, dist);
-    frag_color = vec4(mix(sites[second_nearest_site_index].color, sites[nearest_site_index].color, dist), 1.);
+    float dist = (dists[1] - dists[0]) * (dists[1] + dists[0]) / (2. * distance(sites[indices[0]].pos, sites[indices[1]].pos));
+    float dist2 = (dists[2] - dists[0]) * (dists[1] + dists[0]) / (2. * distance(sites[indices[0]].pos, sites[indices[2]].pos));
+    if(dist2 < dist) {
+        indices[1] = indices[2];
+        dist = dist2;
+    }
+    if(draw_frame) {
+        dist = smoothstep(.5 * line_width - aa_width, .5 * line_width + aa_width, dist);
+        frag_color = vec4(mix(line_color, draw_color ? sites[indices[0]].color : background_color, dist), 1.);
+    } else {
+        dist = smoothstep(-aa_width, aa_width, dist);
+        frag_color = vec4(mix(sites[indices[1]].color, sites[indices[0]].color, dist), 1.);
+    }
 }

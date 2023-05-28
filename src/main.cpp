@@ -19,6 +19,11 @@ static GLuint vao;
 static GLuint ubo;
 // location of uniform var site_array_size
 static GLint site_array_size_loc;
+static GLint style_loc;
+static GLint line_width_loc;
+static GLint line_color_loc;
+
+static GLuint style;
 
 struct Site {
     Vec<2, float> pos;
@@ -102,6 +107,10 @@ static void draw() {
     }
 
     glUniform1ui(site_array_size_loc, current_sites.size());
+    glUniform1ui(style_loc, style);
+    glUniform1f(line_width_loc, 0.005f);
+    glUniform3f(line_color_loc, 0., 0., 0.);
+
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
     glBufferSubData(GL_UNIFORM_BUFFER, 0,
                     static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
@@ -113,8 +122,13 @@ static void draw() {
 }
 
 extern "C" {
-void draw_some_sites(std::size_t num = get_sites().size()) {
-    get_random_sites(num);
+void draw_some_sites(std::size_t num = get_sites().size(),
+                     bool draw_site = true,
+                     bool draw_frame = false,
+                     bool keep_sites = false) {
+    if (!keep_sites) { get_random_sites(num); }
+    style = unsigned(draw_site) + (unsigned(draw_frame) << 1) +
+            (draw_frame ? 0u : 4u);
     draw();
 }
 }
@@ -160,7 +174,11 @@ int main() {
     glUniform2f(glGetUniformLocation(program, "canvas_size"),
                 static_cast<GLfloat>(canvas_width),
                 static_cast<GLfloat>(canvas_height));
-    site_array_size_loc = glGetUniformLocation(program, "site_array_size");
+#define GET_LOC(var) var##_loc = glGetUniformLocation(program, #var)
+    GET_LOC(site_array_size);
+    GET_LOC(style);
+    GET_LOC(line_width);
+    GET_LOC(line_color);
 
     constexpr unsigned MAX_ARRAY_SIZE = 4096;
     glGenBuffers(1, &ubo);

@@ -86,7 +86,7 @@
     <div class="emscripten">
       <progress value="0" max="100" id="progress" hidden="1"></progress>
     </div>
-    <div class="emscripten" style="margin-bottom: 1em">
+    <div class="emscripten" style="margin-bottom: 1em" id="style-control">
       <input
         type="range"
         id="site_number"
@@ -96,8 +96,12 @@
         step="1"
       />
       <label for="site_number"
-        >Site Number: <output id="site_number_value"></output></label
-      >
+        >Site Number: <output id="site_number_value"></output
+      ></label>
+      <input type="checkbox" id="draw_site" name="draw_site" checked />
+      <label for="draw_site">Draw sites?</label>
+      <input type="checkbox" id="draw_frame" name="draw_frame" />
+      <label for="draw_frame">Draw frame?</label>
     </div>
     <div class="emscripten_border">
       <canvas
@@ -119,6 +123,8 @@
       const INIT_SITE_NUM = 32;
       const slider = document.getElementById("site_number");
       const slider_output = slider.nextElementSibling.firstElementChild;
+      const draw_site = document.getElementById("draw_site");
+      const draw_frame = document.getElementById("draw_frame");
 
       var Module = {
         preRun: [],
@@ -126,7 +132,11 @@
           () => {
             slider.value = INIT_SITE_NUM;
             slider_output.textContent = INIT_SITE_NUM;
-            _draw_some_sites(INIT_SITE_NUM);
+            _draw_some_sites(
+              INIT_SITE_NUM,
+              draw_site.checked,
+              draw_frame.checked
+            );
           },
         ],
         print: (function () {
@@ -214,7 +224,23 @@
         e.preventDefault();
         const site_num = parseInt(slider.value);
         slider_output.textContent = site_num;
-        _draw_some_sites(site_num);
+        _draw_some_sites(site_num, draw_site.checked, draw_frame.checked);
+      });
+      draw_site.addEventListener("input", (e) => {
+        _draw_some_sites(
+          parseInt(slider.value),
+          draw_site.checked,
+          draw_frame.checked,
+          true
+        );
+      });
+      draw_frame.addEventListener("input", (e) => {
+        _draw_some_sites(
+          parseInt(slider.value),
+          draw_site.checked,
+          draw_frame.checked,
+          true
+        );
       });
     </script>
     {{{ SCRIPT }}}
