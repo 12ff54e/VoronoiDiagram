@@ -74,6 +74,11 @@
           transform: rotate(360deg);
         }
       }
+
+      #style-control > div {
+        display: inline;
+        margin: 0 1em;
+      }
     </style>
   </head>
   <body>
@@ -87,21 +92,30 @@
       <progress value="0" max="100" id="progress" hidden="1"></progress>
     </div>
     <div class="emscripten" style="margin-bottom: 1em" id="style-control">
-      <input
-        type="range"
-        id="site_number"
-        name="site_number"
-        min="16"
-        max="2048"
-        step="1"
-      />
-      <label for="site_number"
-        >Site Number: <output id="site_number_value"></output
-      ></label>
-      <input type="checkbox" id="draw_site" name="draw_site" checked />
-      <label for="draw_site">Draw sites?</label>
-      <input type="checkbox" id="draw_frame" name="draw_frame" />
-      <label for="draw_frame">Draw frame?</label>
+      <div>
+        <input
+          type="range"
+          id="site_number"
+          name="site_number"
+          min="16"
+          max="2048"
+          step="1"
+        />
+        <label for="site_number"
+          >Site Number: <output id="site_number_value"></output
+        ></label>
+      </div>
+      <div>
+        <input type="checkbox" id="draw_site" name="draw_site" checked />
+        <label for="draw_site">Draw sites?</label>
+      </div>
+      <div>
+        <input type="checkbox" id="draw_frame" name="draw_frame" />
+        <label for="draw_frame">Draw frame?</label>
+      </div>
+      <div>
+        <button id="download_frame">Download frame data</button>
+      </div>
     </div>
     <div class="emscripten_border">
       <canvas
@@ -125,6 +139,41 @@
       const slider_output = slider.nextElementSibling.firstElementChild;
       const draw_site = document.getElementById("draw_site");
       const draw_frame = document.getElementById("draw_frame");
+
+      document
+        .getElementById("download_frame")
+        .addEventListener("click", () => {
+          if (!draw_frame.checked) {
+            alert("You are not in draw frame mode!");
+            return;
+          }
+          const pixelCount =
+            GLctx.drawingBufferWidth * GLctx.drawingBufferHeight;
+          const pixels = new Uint8Array(pixelCount * 4);
+          GLctx.readPixels(
+            0,
+            0,
+            GLctx.drawingBufferWidth,
+            GLctx.drawingBufferHeight,
+            GLctx.RGBA,
+            GLctx.UNSIGNED_BYTE,
+            pixels
+          );
+
+          const alphas = new Float32Array(pixelCount);
+          for (let i = 0; i < pixelCount; ++i) {
+            alphas[i] = pixels[4 * i + 3] / 255;
+          }
+          const a = document.createElement("a");
+          a.setAttribute(
+            "href",
+            window.URL.createObjectURL(
+              new Blob([alphas], { type: "Application/octet-stream" })
+            )
+          );
+          a.setAttribute("download", "frame_data");
+          a.click();
+        });
 
       var Module = {
         preRun: [],

@@ -23,10 +23,10 @@ out vec4 frag_color;
 
 // calculate color such that a smooth transition appears when dist is slightly larger than width
 void render_smooth(float dist, float elem_size, vec3 color) {
-    float aa_width = float(2) / canvas_size.y;
+    float aa_width = 1. / canvas_size.y;
     if(dist < elem_size + aa_width) {
         dist = smoothstep(elem_size, elem_size + aa_width, dist);
-        frag_color = vec4(mix(color, frag_color.xyz, dist), 1.);
+        frag_color = mix(vec4(color, 1.), frag_color, dist);
     }
 }
 
@@ -43,7 +43,7 @@ void main() {
     bool draw_color = bool(style & 4u);
 
     vec3 background_color = color;
-    frag_color = vec4(background_color, 1.0);
+    frag_color = vec4(background_color, 0.);
 
     float aa_width = 1. / canvas_size.y;
     float point_size = 0.02f / sqrt(float(site_array_size));
@@ -81,7 +81,7 @@ void main() {
     }
     if(draw_frame) {
         dist = smoothstep(.5 * line_width - aa_width, .5 * line_width + aa_width, dist);
-        frag_color = vec4(mix(line_color, draw_color ? sites[indices[0]].color : background_color, dist), 1.);
+        frag_color = mix(vec4(line_color, 1.), draw_color ? vec4(sites[indices[0]].color, 1.) : frag_color, dist);
     } else {
         dist = smoothstep(-aa_width, aa_width, dist);
         frag_color = vec4(mix(sites[indices[1]].color, sites[indices[0]].color, dist), 1.);

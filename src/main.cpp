@@ -139,6 +139,7 @@ int main() {
     webgl_context_attr.majorVersion = 2;
     webgl_context_attr.minorVersion = 0;
     webgl_context_attr.antialias = EM_TRUE;
+    webgl_context_attr.preserveDrawingBuffer = EM_TRUE;
     exec_and_check(emscripten_set_canvas_element_size, canvas, canvas_width,
                    canvas_height);
 
@@ -224,7 +225,7 @@ int main() {
 
     auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event, void*) {
         if (key_event->code == std::string{"KeyF"}) {
-            draw_some_sites();
+            draw_some_sites(get_sites().size(), style & 1, (style >> 1) & 1);
             return EM_TRUE;
         }
         return EM_FALSE;
