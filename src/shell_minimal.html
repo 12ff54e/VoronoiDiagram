@@ -75,9 +75,10 @@
         }
       }
 
-      #style-control > div {
-        display: inline;
-        margin: 0 1em;
+      #style-control {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        row-gap: 10px;
       }
     </style>
   </head>
@@ -92,7 +93,7 @@
       <progress value="0" max="100" id="progress" hidden="1"></progress>
     </div>
     <div class="emscripten" style="margin-bottom: 1em" id="style-control">
-      <div>
+      <div style="grid-column: auto / span 2">
         <input
           type="range"
           id="site_number"
@@ -116,6 +117,20 @@
       <div>
         <button id="download_frame">Download frame data</button>
       </div>
+      <div style="grid-column: auto / span 2">
+        <input
+          type="range"
+          id="line_width"
+          name="line_width"
+          min="1"
+          max="20"
+          step="1"
+          value="1"
+        />
+        <label for="line_width"
+          >Line width: <output id="line_width_value"></output>px</label
+        >
+      </div>
     </div>
     <div class="emscripten_border">
       <canvas
@@ -135,10 +150,12 @@
       var spinnerElement = document.getElementById("spinner");
 
       const INIT_SITE_NUM = 32;
-      const slider = document.getElementById("site_number");
-      const slider_output = slider.nextElementSibling.firstElementChild;
+      const site_num = document.getElementById("site_number");
+      const site_num_output = site_num.nextElementSibling.firstElementChild;
       const draw_site = document.getElementById("draw_site");
       const draw_frame = document.getElementById("draw_frame");
+      const line_width = document.getElementById("line_width");
+      const line_width_output = line_width.nextElementSibling.firstElementChild;
 
       document
         .getElementById("download_frame")
@@ -179,8 +196,8 @@
         preRun: [],
         postRun: [
           () => {
-            slider.value = INIT_SITE_NUM;
-            slider_output.textContent = INIT_SITE_NUM;
+            site_num.value = INIT_SITE_NUM;
+            site_num_output.textContent = INIT_SITE_NUM;
             _draw_some_sites(
               INIT_SITE_NUM,
               draw_site.checked,
@@ -269,15 +286,15 @@
         };
       };
 
-      slider.addEventListener("input", (e) => {
+      site_num.addEventListener("input", (e) => {
         e.preventDefault();
-        const site_num = parseInt(slider.value);
-        slider_output.textContent = site_num;
+        const site_num = parseInt(e.target.value);
+        site_num_output.textContent = site_num;
         _draw_some_sites(site_num, draw_site.checked, draw_frame.checked);
       });
       draw_site.addEventListener("input", (e) => {
         _draw_some_sites(
-          parseInt(slider.value),
+          parseInt(site_num.value),
           draw_site.checked,
           draw_frame.checked,
           true
@@ -285,10 +302,22 @@
       });
       draw_frame.addEventListener("input", (e) => {
         _draw_some_sites(
-          parseInt(slider.value),
+          parseInt(site_num.value),
           draw_site.checked,
           draw_frame.checked,
           true
+        );
+      });
+      line_width.addEventListener("input", (e) => {
+        e.preventDefault();
+        const lw = parseInt(e.target.value);
+        line_width_output.textContent = lw;
+        _draw_some_sites(
+          site_num.value,
+          draw_site.checked,
+          draw_frame.checked,
+          true,
+          lw
         );
       });
     </script>

@@ -48,19 +48,26 @@ void main() {
     float aa_width = 1. / canvas_size.y;
     float point_size = 0.02f / sqrt(float(site_array_size));
 
-    uint indices[] = uint[3](0u, 0u, 0u);
-    float dists[] = float[3](1., 1., 1.);
+    // find N nearest sites
+    const uint N = 4u;
+    uint indices[N];
+    float dists[N];
+    // init 
+    for(uint i = 0u; i < N; ++i) {
+        dists[i] = 1.;
+    }
+    // iterate over sites
     for(uint i = 0u; i < site_array_size; ++i) {
         float dist = distance(uv, sites[i].pos);
         if(dist < point_size + aa_width && draw_site) {
             frag_color = vec4(sites[i].color, 1.); // set current block color
             render_smooth(dist, point_size, vec3(0.));
             return;
-        } else if(dist < dists[2]) {
-            dists[2] = dist;
-            indices[2] = i;
+        } else if(dist < dists[N - 1u]) {
+            dists[N - 1u] = dist;
+            indices[N - 1u] = i;
             // bubble sort
-            for(int j = 1; j >= 0; --j) {
+            for(int j = int(N) - 2; j >= 0; --j) {
                 if(dists[j + 1] < dists[j]) {
                     float dd = dists[j];
                     uint ii = indices[j];
@@ -73,12 +80,14 @@ void main() {
         }
     }
 
-    float dist = (dists[1] - dists[0]) * (dists[1] + dists[0]) / (2. * distance(sites[indices[0]].pos, sites[indices[1]].pos));
-    float dist2 = (dists[2] - dists[0]) * (dists[1] + dists[0]) / (2. * distance(sites[indices[0]].pos, sites[indices[2]].pos));
-    if(dist2 < dist) {
-        indices[1] = indices[2];
-        dist = dist2;
+    for(uint i = 1u; i < N; ++i) {
+        dists[i] = (dists[i] - dists[0]) * (dists[i] + dists[0]) / (2. * distance(sites[indices[0]].pos, sites[indices[i]].pos));
+        if(dists[i] < dists[1]) {
+            dists[1] = dists[i];
+            indices[1] = indices[i];
+        }   
     }
+    float dist = dists[1];
     if(draw_frame) {
         dist = smoothstep(.5 * line_width - aa_width, .5 * line_width + aa_width, dist);
         frag_color = mix(vec4(line_color, 1.), draw_color ? vec4(sites[indices[0]].color, 1.) : frag_color, dist);

@@ -24,6 +24,7 @@ static GLint line_width_loc;
 static GLint line_color_loc;
 
 static GLuint style;
+static int line_width = 1;
 
 struct Site {
     Vec<2, float> pos;
@@ -108,7 +109,8 @@ static void draw() {
 
     glUniform1ui(site_array_size_loc, current_sites.size());
     glUniform1ui(style_loc, style);
-    glUniform1f(line_width_loc, 0.005f);
+    glUniform1f(line_width_loc, static_cast<float>(line_width) /
+                                    static_cast<float>(canvas_height));
     glUniform3f(line_color_loc, 0., 0., 0.);
 
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
@@ -122,13 +124,16 @@ static void draw() {
 }
 
 extern "C" {
+void draw_some_sites(std::size_t, bool, bool, bool, int);
 void draw_some_sites(std::size_t num = get_sites().size(),
                      bool draw_site = true,
                      bool draw_frame = false,
-                     bool keep_sites = false) {
+                     bool keep_sites = false,
+                     int line_width_ = -1) {
     if (!keep_sites) { get_random_sites(num); }
     style = unsigned(draw_site) + (unsigned(draw_frame) << 1) +
             (draw_frame ? 0u : 4u);
+    if (line_width_ > 0) { line_width = line_width_; }
     draw();
 }
 }
@@ -225,7 +230,8 @@ int main() {
 
     auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event, void*) {
         if (key_event->code == std::string{"KeyF"}) {
-            draw_some_sites(get_sites().size(), style & 1, (style >> 1) & 1);
+            get_random_sites(get_sites().size());
+            draw();
             return EM_TRUE;
         }
         return EM_FALSE;
