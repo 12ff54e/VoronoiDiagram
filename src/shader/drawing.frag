@@ -85,7 +85,7 @@ void main() {
         if(dists[i] < dists[1]) {
             dists[1] = dists[i];
             indices[1] = indices[i];
-        }   
+        }
     }
     float dist = dists[1];
     if(draw_frame) {

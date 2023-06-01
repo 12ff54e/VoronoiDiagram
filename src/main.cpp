@@ -59,7 +59,12 @@ inline static auto& get_sites() {
     return sites;
 }
 
-inline static auto& clip_coord(Vec<2, float>& coord) {
+/**
+ * @brief Normalize coordinates in canvas pixels to x:(-ar/2, ar/2), y:(-.5,
+ * .5), and flip y coordinate.
+ *
+ */
+inline static auto& normalize_coord(Vec<2, float>& coord) {
     constexpr float ar =
         static_cast<float>(canvas_width) / static_cast<float>(canvas_height);
     coord.x() = (coord.x() / static_cast<float>(canvas_width) - .5f) * ar;
@@ -82,6 +87,12 @@ static auto& get_random_sites(std::size_t site_num) {
         sites.emplace_back(random_pos(), random_color());
     }
     return sites;
+}
+
+static auto& get_drawing_shader(const std::string& v = "",
+                                const std::string& f = "") {
+    static ShaderProgram program(v, f);
+    return program;
 }
 
 // main loop
@@ -107,11 +118,13 @@ static void draw() {
         ptr[8 * i + 6] = current_sites[i].color.z();
     }
 
-    glUniform1ui(site_array_size_loc, current_sites.size());
-    glUniform1ui(style_loc, style);
-    glUniform1f(line_width_loc, static_cast<float>(line_width) /
-                                    static_cast<float>(canvas_height));
-    glUniform3f(line_color_loc, 0., 0., 0.);
+    auto& shader = get_drawing_shader();
+    shader.set_uniform_value<GLuint>("site_array_size", current_sites.size());
+    shader.set_uniform_value<GLuint>("style", style);
+    shader.set_uniform_value<GLfloat>(
+        "line_width",
+        static_cast<float>(line_width) / static_cast<float>(canvas_height));
+    shader.set_uniform_value<GLfloat>("line_color", 0, 0, 0);
 
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
     glBufferSubData(GL_UNIFORM_BUFFER, 0,
@@ -156,31 +169,26 @@ int main() {
 
     // Create shader program
 
-    std::fstream fs("shader/vertex_shader.vert");
-    if (!fs.is_open()) {
-        std::cout << "Can not open vertex shader source file!\n";
-        return 1;
-    }
-    std::string vertex_shader_source((std::istreambuf_iterator<char>(fs)),
-                                     std::istreambuf_iterator<char>());
-    fs.close();
-    fs.clear();
-    fs.open("shader/fragment_shader.frag");
-    if (!fs.is_open()) {
-        std::cout << "Can not open fragment shader source file!\n";
-        return 1;
-    }
-    std::string fragment_shader_source((std::istreambuf_iterator<char>(fs)),
-                                       std::istreambuf_iterator<char>());
-    static ShaderProgram program(vertex_shader_source, fragment_shader_source);
+    auto read_shader_source = [](const std::string& path) {
+        std::fstream fs(path);
+        if (!fs.is_open()) {
+            std::cout << "Can not open shader source file: " << path << '\n';
+            throw std::runtime_error("Shader file not found!");
+        }
+        return std::string{(std::istreambuf_iterator<char>(fs)),
+                           std::istreambuf_iterator<char>()};
+    };
+
+    auto& drawing_shader =
+        get_drawing_shader(read_shader_source("shader/simple_2D.vert"),
+                           read_shader_source("shader/drawing.frag"));
     std::cout << "Shader compilation success.\n";
-    program.use();
+    drawing_shader.use();
 
     // pass canvas dimension to shader as uniform
-    glUniform2f(glGetUniformLocation(program, "canvas_size"),
-                static_cast<GLfloat>(canvas_width),
-                static_cast<GLfloat>(canvas_height));
-#define GET_LOC(var) var##_loc = glGetUniformLocation(program, #var)
+    drawing_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                              canvas_height);
+#define GET_LOC(var) var##_loc = glGetUniformLocation(drawing_shader, #var)
     GET_LOC(site_array_size);
     GET_LOC(style);
     GET_LOC(line_width);
@@ -193,9 +201,9 @@ int main() {
                  nullptr, GL_DYNAMIC_DRAW);
 
     // bind ubo to shader program
-    GLuint blockIndex = glGetUniformBlockIndex(program, "user_data");
+    GLuint blockIndex = glGetUniformBlockIndex(drawing_shader, "user_data");
     GLuint bindingPoint = 0;
-    glUniformBlockBinding(program, blockIndex, bindingPoint);
+    glUniformBlockBinding(drawing_shader, blockIndex, bindingPoint);
     glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
 
     // Prepare data for the full-screen quad
@@ -239,7 +247,7 @@ int main() {
     auto handle_mouse_click = [](int, const EmscriptenMouseEvent* mouse_event,
                                  void*) {
         Vec<2, float> pos(mouse_event->targetX, mouse_event->targetY);
-        get_sites().emplace_back(clip_coord(pos), random_color());
+        get_sites().emplace_back(normalize_coord(pos), random_color());
         draw();
         return EM_TRUE;
     };
