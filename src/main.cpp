@@ -14,14 +14,17 @@ constexpr int canvas_width = 1920;
 constexpr int canvas_height = 1080;
 
 // vertex array buffer
-static GLuint vao;
+static GLuint quad_vao;
 // uniform buffer id
 static GLuint ubo;
-// location of uniform var site_array_size
-static GLint site_array_size_loc;
-static GLint style_loc;
-static GLint line_width_loc;
-static GLint line_color_loc;
+// frame buffer id
+static GLuint fbo;
+// textures
+static GLuint textures[2];
+
+static bool old_method = false;
+
+constexpr unsigned MAX_ARRAY_SIZE = 4096;
 
 static GLuint style;
 static int line_width = 1;
@@ -60,14 +63,12 @@ inline static auto& get_sites() {
 }
 
 /**
- * @brief Normalize coordinates in canvas pixels to x:(-ar/2, ar/2), y:(-.5,
+ * @brief Normalize coordinates in canvas pixels to x:(-.5, .5), y:(-.5,
  * .5), and flip y coordinate.
  *
  */
 inline static auto& normalize_coord(Vec<2, float>& coord) {
-    constexpr float ar =
-        static_cast<float>(canvas_width) / static_cast<float>(canvas_height);
-    coord.x() = (coord.x() / static_cast<float>(canvas_width) - .5f) * ar;
+    coord.x() = coord.x() / static_cast<float>(canvas_width) - .5f;
     coord.y() = .5f - coord.y() / static_cast<float>(canvas_height);
     return coord;
 }
@@ -77,10 +78,8 @@ static auto& get_random_sites(std::size_t site_num) {
     sites.clear();
     sites.reserve(site_num);
 
-    constexpr float ar =
-        static_cast<float>(canvas_width) / static_cast<float>(canvas_height);
     static auto random_pos = []() {
-        return Vec<2, float>{(get_random() - .5f) * ar, get_random() - .5f};
+        return Vec<2, float>{get_random() - .5f, get_random() - .5f};
     };
 
     for (std::size_t i = 0; i < site_num; ++i) {
@@ -89,19 +88,86 @@ static auto& get_random_sites(std::size_t site_num) {
     return sites;
 }
 
-static auto& get_drawing_shader(const std::string& v = "",
-                                const std::string& f = "") {
-    static ShaderProgram program(v, f);
-    return program;
+static auto& shader_programs() {
+    static std::unordered_map<std::string, ShaderProgram> programs;
+    return programs;
+}
+static auto& shader_programs(const std::string& name,
+                             const std::string& v,
+                             const std::string& f) {
+    auto& programs = shader_programs();
+    auto iter = programs.find(name);
+    if (iter == programs.end()) {
+        iter = programs.emplace(name, ShaderProgram{v, f}).first;
+    } else {
+        iter->second = ShaderProgram{v, f};
+    }
+    return iter->second;
+}
+static auto& shader_programs(const std::string& name) {
+    return shader_programs().at(name);
 }
 
-// main loop
-static void draw() {
-    // set background color to grey
-    glClearColor(0.3f, 0.3f, 0.3f, 1.f);
-    glClear(GL_COLOR_BUFFER_BIT);
+static void initial_device_objects() {
+    // uniform buffer for site data
+    glGenBuffers(1, &ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+    glBufferData(GL_UNIFORM_BUFFER, MAX_ARRAY_SIZE * Site::std140_padded_size,
+                 nullptr, GL_DYNAMIC_DRAW);
 
-    // generate random sites
+    // ping-pong textures for JFA
+    glGenTextures(2, textures);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textures[0]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
+                 GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+    glBindTexture(GL_TEXTURE_2D, textures[1]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
+                 GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+
+    // frame buffer
+    glGenFramebuffers(1, &fbo);
+
+    // Prepare data for the full-screen quad
+
+    // x, y, r, g, b for point at upper-left, upper-right,
+    // lower-right, lower-left.
+    GLfloat positions_color[] = {
+        -1.f, 1.f,  .9f, .7f, .4f, 1.f, 1.f,  .8f, .7f, 1.f,
+        -1.f, -1.f, .5f, 1.f, .2f, 1.f, -1.f, .9f, .7f, .4f,
+    };
+    constexpr unsigned pos_size = 2;
+    constexpr unsigned color_size = 3;
+    constexpr unsigned vertex_size = pos_size + color_size;
+
+    glGenVertexArrays(1, &quad_vao);
+    glBindVertexArray(quad_vao);
+
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(positions_color), positions_color,
+                 GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, pos_size, GL_FLOAT, GL_FALSE,
+                          sizeof(GLfloat) * vertex_size, nullptr);
+    glVertexAttribPointer(1, color_size, GL_FLOAT, GL_FALSE,
+                          sizeof(GLfloat) * vertex_size,
+                          reinterpret_cast<void*>(sizeof(GLfloat) * pos_size));
+}
+
+/**
+ * @brief Compute Voronoi diagram using JFA
+ *
+ * @return texture id
+ */
+static GLuint voronoi_tesselation() {
     auto& current_sites = get_sites();
 
     // pad every site to two vec4
@@ -110,30 +176,110 @@ static void draw() {
     auto ptr = std::make_unique<float[]>(padded_data_size);
 
     for (std::size_t i = 0; i < current_sites.size(); ++i) {
-        ptr[8 * i] = current_sites[i].pos.x();
-        ptr[8 * i + 1] = current_sites[i].pos.y();
+        ptr[8 * i] = current_sites[i].pos.x() + .5f;
+        ptr[8 * i + 1] = current_sites[i].pos.y() + .5f;
 
         ptr[8 * i + 4] = current_sites[i].color.x();
         ptr[8 * i + 5] = current_sites[i].color.y();
         ptr[8 * i + 6] = current_sites[i].color.z();
     }
 
-    auto& shader = get_drawing_shader();
-    shader.set_uniform_value<GLuint>("site_array_size", current_sites.size());
-    shader.set_uniform_value<GLuint>("style", style);
-    shader.set_uniform_value<GLfloat>(
-        "line_width",
-        static_cast<float>(line_width) / static_cast<float>(canvas_height));
-    shader.set_uniform_value<GLfloat>("line_color", 0, 0, 0);
-
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
     glBufferSubData(GL_UNIFORM_BUFFER, 0,
                     static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
                     ptr.get());
 
-    // Draw the full-screen quad, to let OpenGL invoke fragment shader
-    glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    auto& shader = shader_programs("JFA");
+    shader.use();
+    shader.set_uniform_value<GLuint>("site_array_size", current_sites.size());
+
+    // the extra step is for initialize texture with sites
+    auto step_num = static_cast<std::size_t>(std::ceil(
+                        std::log2(std::max(canvas_width, canvas_height)))) +
+                    1;
+
+    int step_size_x = canvas_width;
+    int step_size_y = canvas_height;
+    for (std::size_t i = 0; i < step_num; ++i) {
+        shader.set_uniform_value<GLint>("step_size", step_size_x, step_size_y);
+
+        // input texture
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, textures[i % 2]);
+        // output texture
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, textures[1 - i % 2], 0);
+
+        // Draw the full-screen quad, to let OpenGL invoke fragment shader
+        glBindVertexArray(quad_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        step_size_x = static_cast<int>(std::ceil(.5 * step_size_x));
+        step_size_y = static_cast<int>(std::ceil(.5 * step_size_y));
+    }
+
+    return textures[step_num % 2];
+}
+
+// main loop
+static void draw() {
+    if (old_method) {  // set background color to grey
+        glClearColor(0.3f, 0.3f, 0.3f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // generate random sites
+        auto& current_sites = get_sites();
+
+        // pad every site to two vec4
+        std::size_t padded_data_size =
+            current_sites.size() * Site::std140_padded_size / sizeof(float);
+        auto ptr = std::make_unique<float[]>(padded_data_size);
+
+        constexpr float ar = static_cast<float>(canvas_width) /
+                             static_cast<float>(canvas_height);
+
+        for (std::size_t i = 0; i < current_sites.size(); ++i) {
+            ptr[8 * i] = current_sites[i].pos.x() * ar;
+            ptr[8 * i + 1] = current_sites[i].pos.y();
+
+            ptr[8 * i + 4] = current_sites[i].color.x();
+            ptr[8 * i + 5] = current_sites[i].color.y();
+            ptr[8 * i + 6] = current_sites[i].color.z();
+        }
+
+        auto& shader = shader_programs("simple_shader");
+        shader.set_uniform_value<GLuint>("site_array_size",
+                                         current_sites.size());
+        shader.set_uniform_value<GLuint>("style", style);
+        shader.set_uniform_value<GLfloat>(
+            "line_width",
+            static_cast<float>(line_width) / static_cast<float>(canvas_height));
+        shader.set_uniform_value<GLfloat>("line_color", 0, 0, 0);
+
+        glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+        glBufferSubData(
+            GL_UNIFORM_BUFFER, 0,
+            static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
+            ptr.get());
+
+        // Draw the full-screen quad, to let OpenGL invoke fragment shader
+        glBindVertexArray(quad_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    } else {
+        auto texture = voronoi_tesselation();
+
+        auto& shader = shader_programs("draw_texture");
+        shader.set_uniform_value<GLuint>("site_array_size", get_sites().size());
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        shader.use();
+        glBindVertexArray(quad_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
 }
 
 extern "C" {
@@ -152,21 +298,23 @@ void draw_some_sites(std::size_t num = get_sites().size(),
 }
 
 int main() {
-    EmscriptenWebGLContextAttributes webgl_context_attr;
-    emscripten_webgl_init_context_attributes(&webgl_context_attr);
-    webgl_context_attr.majorVersion = 2;
-    webgl_context_attr.minorVersion = 0;
-    webgl_context_attr.antialias = EM_TRUE;
-    webgl_context_attr.preserveDrawingBuffer = EM_TRUE;
-    exec_and_check(emscripten_set_canvas_element_size, canvas, canvas_width,
-                   canvas_height);
+    // canvas and context setup
+    {
+        EmscriptenWebGLContextAttributes webgl_context_attr;
+        emscripten_webgl_init_context_attributes(&webgl_context_attr);
+        webgl_context_attr.majorVersion = 2;
+        webgl_context_attr.minorVersion = 0;
+        webgl_context_attr.antialias = EM_TRUE;
+        webgl_context_attr.preserveDrawingBuffer = EM_TRUE;
+        exec_and_check(emscripten_set_canvas_element_size, canvas, canvas_width,
+                       canvas_height);
 
-    auto webgl_context =
-        emscripten_webgl_create_context(canvas, &webgl_context_attr);
+        auto webgl_context =
+            emscripten_webgl_create_context(canvas, &webgl_context_attr);
 
-    exec_and_check(emscripten_webgl_make_context_current, webgl_context);
-    std::cout << glGetString(GL_VERSION) << '\n';
-
+        exec_and_check(emscripten_webgl_make_context_current, webgl_context);
+        std::cout << glGetString(GL_VERSION) << '\n';
+    }
     // Create shader program
 
     auto read_shader_source = [](const std::string& path) {
@@ -179,62 +327,38 @@ int main() {
                            std::istreambuf_iterator<char>()};
     };
 
-    auto& drawing_shader =
-        get_drawing_shader(read_shader_source("shader/simple_2D.vert"),
-                           read_shader_source("shader/drawing.frag"));
+    auto& simple_shader = shader_programs(
+        "simple_shader", read_shader_source("shader/simple_2D.vert"),
+        read_shader_source("shader/drawing.frag"));
+
+    auto& draw_texture_shader = shader_programs(
+        "draw_texture", read_shader_source("shader/simple_2D.vert"),
+        read_shader_source("shader/draw_texture.frag"));
+
+    // compile JFA computing shader
+    auto& compute_shader =
+        shader_programs("JFA", read_shader_source("shader/simple_2D.vert"),
+                        read_shader_source("shader/JFA.frag"));
+
     std::cout << "Shader compilation success.\n";
-    drawing_shader.use();
 
-    // pass canvas dimension to shader as uniform
-    drawing_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
+    simple_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                             canvas_height);
+    draw_texture_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                                   canvas_height);
+    compute_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
                                               canvas_height);
-#define GET_LOC(var) var##_loc = glGetUniformLocation(drawing_shader, #var)
-    GET_LOC(site_array_size);
-    GET_LOC(style);
-    GET_LOC(line_width);
-    GET_LOC(line_color);
 
-    constexpr unsigned MAX_ARRAY_SIZE = 4096;
-    glGenBuffers(1, &ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, ubo);
-    glBufferData(GL_UNIFORM_BUFFER, MAX_ARRAY_SIZE * Site::std140_padded_size,
-                 nullptr, GL_DYNAMIC_DRAW);
+    initial_device_objects();
 
-    // bind ubo to shader program
-    GLuint blockIndex = glGetUniformBlockIndex(drawing_shader, "user_data");
     GLuint bindingPoint = 0;
-    glUniformBlockBinding(drawing_shader, blockIndex, bindingPoint);
     glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
 
-    // Prepare data for the full-screen quad
-    {
-        // x, y, r, g, b for point at upper-left, upper-right,
-        // lower-right, lower-left.
-        GLfloat positions_color[] = {
-            -1.f, 1.f,  .9f, .7f, .4f, 1.f, 1.f,  .8f, .7f, 1.f,
-            -1.f, -1.f, .5f, 1.f, .2f, 1.f, -1.f, .9f, .7f, .4f,
-        };
-        constexpr unsigned pos_size = 2;
-        constexpr unsigned color_size = 3;
-        constexpr unsigned vertex_size = pos_size + color_size;
-
-        glGenVertexArrays(1, &vao);
-        glBindVertexArray(vao);
-
-        GLuint vbo;
-        glGenBuffers(1, &vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(positions_color), positions_color,
-                     GL_DYNAMIC_DRAW);
-
-        glEnableVertexAttribArray(0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(0, pos_size, GL_FLOAT, GL_FALSE,
-                              sizeof(GLfloat) * vertex_size, nullptr);
-        glVertexAttribPointer(
-            1, color_size, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * vertex_size,
-            reinterpret_cast<void*>(sizeof(GLfloat) * pos_size));
-    }
+    simple_shader.bind_uniform_block("user_data", bindingPoint);
+    draw_texture_shader.set_uniform_value<GLint>("board", 0);
+    draw_texture_shader.bind_uniform_block("user_data", bindingPoint);
+    compute_shader.set_uniform_value<GLint>("board", 0);
+    compute_shader.bind_uniform_block("user_data", bindingPoint);
 
     auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event, void*) {
         if (key_event->code == std::string{"KeyF"}) {

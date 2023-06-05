@@ -22,8 +22,11 @@ class ShaderProgram {
     ShaderProgram() = delete;
     ShaderProgram(const std::string&, const std::string&);
     ShaderProgram(const ShaderProgram&) = delete;
-    ShaderProgram(ShaderProgram&&) = default;
+    ShaderProgram(ShaderProgram&&);
     ~ShaderProgram();
+
+    ShaderProgram& operator=(const ShaderProgram&) = delete;
+    ShaderProgram& operator=(ShaderProgram&&);
 
     void use();
 
@@ -32,6 +35,7 @@ class ShaderProgram {
 
     template <typename T, typename... Ts>
     void set_uniform_value(const std::string& name, Ts... args) {
+        use();
         auto iter = uniforms_.find(name);
         if (iter == uniforms_.end()) {
             iter =
@@ -54,6 +58,9 @@ class ShaderProgram {
 
         num_branch(1) else num_branch(2) else num_branch(3) else num_branch(4)
     }
+
+    void bind_uniform_block(const std::string& name,
+                            GLuint uniform_bloc_binding);
 };
 
 auto ShaderProgram::err_check(GLuint id, int t, const std::string& err) {
@@ -113,12 +120,31 @@ ShaderProgram::ShaderProgram(const std::string& vertex_shader_src,
     glDeleteShader(frag_shader);
 }
 
+ShaderProgram::ShaderProgram(ShaderProgram&& other) : id(other.id) {
+    other.id = 0;  // DeleteProgram will silently ignore the value zero.
+                   // (Section 2.12.3 of OpenGL ES 3.0.6)
+}
+
+ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) {
+    if (this == &other) { return *this; }
+    glDeleteProgram(id);
+    id = other.id;
+    other.id = 0;
+    return *this;
+}
+
 ShaderProgram::~ShaderProgram() {
     glDeleteProgram(id);
 }
 
 void ShaderProgram::use() {
     glUseProgram(id);
+}
+
+void ShaderProgram::bind_uniform_block(const std::string& name,
+                                       GLuint uniform_bloc_binding) {
+    glUniformBlockBinding(id, glGetUniformBlockIndex(id, name.c_str()),
+                          uniform_bloc_binding);
 }
 
 #endif  // VD_SHADER_
