@@ -34,7 +34,7 @@ class ShaderProgram {
     inline operator GLuint() const { return id; }
 
     template <typename T, typename... Ts>
-    void set_uniform_value(const std::string& name, Ts... args) {
+    ShaderProgram& set_uniform_value(const std::string& name, Ts... args) {
         use();
         auto iter = uniforms_.find(name);
         if (iter == uniforms_.end()) {
@@ -57,10 +57,12 @@ class ShaderProgram {
     }
 
         num_branch(1) else num_branch(2) else num_branch(3) else num_branch(4)
+
+            return *this;
     }
 
-    void bind_uniform_block(const std::string& name,
-                            GLuint uniform_bloc_binding);
+    ShaderProgram& bind_uniform_block(const std::string& name,
+                                      GLuint uniform_bloc_binding);
 };
 
 auto ShaderProgram::err_check(GLuint id, int t, const std::string& err) {
@@ -141,10 +143,11 @@ void ShaderProgram::use() {
     glUseProgram(id);
 }
 
-void ShaderProgram::bind_uniform_block(const std::string& name,
-                                       GLuint uniform_bloc_binding) {
+ShaderProgram& ShaderProgram::bind_uniform_block(const std::string& name,
+                                                 GLuint uniform_bloc_binding) {
     glUniformBlockBinding(id, glGetUniformBlockIndex(id, name.c_str()),
                           uniform_bloc_binding);
+    return *this;
 }
 
 #endif  // VD_SHADER_

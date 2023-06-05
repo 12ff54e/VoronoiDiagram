@@ -63,13 +63,15 @@ inline static auto& get_sites() {
 }
 
 /**
- * @brief Normalize coordinates in canvas pixels to x:(-.5, .5), y:(-.5,
- * .5), and flip y coordinate.
+ * @brief Normalize coordinates in canvas pixels to x:(0., 1.), y:(0., 1.), and
+ * flip y coordinate since the origin of mouse event coordinate is at top-left
+ * corner but gl_FragCoord in fragment shader origins at bottom-left corner by
+ * default.
  *
  */
 inline static auto& normalize_coord(Vec<2, float>& coord) {
-    coord.x() = coord.x() / static_cast<float>(canvas_width) - .5f;
-    coord.y() = .5f - coord.y() / static_cast<float>(canvas_height);
+    coord.x() = coord.x() / static_cast<float>(canvas_width);
+    coord.y() = 1.f - coord.y() / static_cast<float>(canvas_height);
     return coord;
 }
 
@@ -79,7 +81,7 @@ static auto& get_random_sites(std::size_t site_num) {
     sites.reserve(site_num);
 
     static auto random_pos = []() {
-        return Vec<2, float>{get_random() - .5f, get_random() - .5f};
+        return Vec<2, float>{get_random(), get_random()};
     };
 
     for (std::size_t i = 0; i < site_num; ++i) {
@@ -168,32 +170,11 @@ static void initial_device_objects() {
  * @return texture id
  */
 static GLuint voronoi_tesselation() {
-    auto& current_sites = get_sites();
-
-    // pad every site to two vec4
-    std::size_t padded_data_size =
-        current_sites.size() * Site::std140_padded_size / sizeof(float);
-    auto ptr = std::make_unique<float[]>(padded_data_size);
-
-    for (std::size_t i = 0; i < current_sites.size(); ++i) {
-        ptr[8 * i] = current_sites[i].pos.x() + .5f;
-        ptr[8 * i + 1] = current_sites[i].pos.y() + .5f;
-
-        ptr[8 * i + 4] = current_sites[i].color.x();
-        ptr[8 * i + 5] = current_sites[i].color.y();
-        ptr[8 * i + 6] = current_sites[i].color.z();
-    }
-
-    glBindBuffer(GL_UNIFORM_BUFFER, ubo);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0,
-                    static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
-                    ptr.get());
-
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
     auto& shader = shader_programs("JFA");
     shader.use();
-    shader.set_uniform_value<GLuint>("site_array_size", current_sites.size());
+    shader.set_uniform_value<GLuint>("site_array_size", get_sites().size());
 
     // the extra step is for initialize texture with sites
     auto step_num = static_cast<std::size_t>(std::ceil(
@@ -224,62 +205,55 @@ static GLuint voronoi_tesselation() {
 
 // main loop
 static void draw() {
-    if (old_method) {  // set background color to grey
-        glClearColor(0.3f, 0.3f, 0.3f, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        // generate random sites
-        auto& current_sites = get_sites();
-
+    auto& current_sites = get_sites();
+    // update uniform buffer storing site data
+    {
         // pad every site to two vec4
         std::size_t padded_data_size =
             current_sites.size() * Site::std140_padded_size / sizeof(float);
         auto ptr = std::make_unique<float[]>(padded_data_size);
 
-        constexpr float ar = static_cast<float>(canvas_width) /
-                             static_cast<float>(canvas_height);
-
         for (std::size_t i = 0; i < current_sites.size(); ++i) {
-            ptr[8 * i] = current_sites[i].pos.x() * ar;
+            ptr[8 * i] = current_sites[i].pos.x();
             ptr[8 * i + 1] = current_sites[i].pos.y();
 
             ptr[8 * i + 4] = current_sites[i].color.x();
             ptr[8 * i + 5] = current_sites[i].color.y();
             ptr[8 * i + 6] = current_sites[i].color.z();
         }
-
-        auto& shader = shader_programs("simple_shader");
-        shader.set_uniform_value<GLuint>("site_array_size",
-                                         current_sites.size());
-        shader.set_uniform_value<GLuint>("style", style);
-        shader.set_uniform_value<GLfloat>(
-            "line_width",
-            static_cast<float>(line_width) / static_cast<float>(canvas_height));
-        shader.set_uniform_value<GLfloat>("line_color", 0, 0, 0);
-
         glBindBuffer(GL_UNIFORM_BUFFER, ubo);
         glBufferSubData(
             GL_UNIFORM_BUFFER, 0,
             static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
             ptr.get());
+    }
 
-        // Draw the full-screen quad, to let OpenGL invoke fragment shader
-        glBindVertexArray(quad_vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    if (old_method) {
+        // set background color to grey
+        glClearColor(0.3f, 0.3f, 0.3f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        shader_programs("simple_shader")
+            .set_uniform_value<GLuint>("site_array_size", current_sites.size())
+            .set_uniform_value<GLuint>("style", style)
+            .set_uniform_value<GLfloat>("line_width",
+                                        static_cast<float>(line_width) /
+                                            static_cast<float>(canvas_height))
+            .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
     } else {
         auto texture = voronoi_tesselation();
 
-        auto& shader = shader_programs("draw_texture");
-        shader.set_uniform_value<GLuint>("site_array_size", get_sites().size());
+        shader_programs("draw_texture")
+            .set_uniform_value<GLuint>("site_array_size", current_sites.size());
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        shader.use();
-        glBindVertexArray(quad_vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
+
+    // Draw the full-screen quad, to let OpenGL invoke fragment shader
+    glBindVertexArray(quad_vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 extern "C" {
@@ -315,70 +289,71 @@ int main() {
         exec_and_check(emscripten_webgl_make_context_current, webgl_context);
         std::cout << glGetString(GL_VERSION) << '\n';
     }
-    // Create shader program
-
-    auto read_shader_source = [](const std::string& path) {
-        std::fstream fs(path);
-        if (!fs.is_open()) {
-            std::cout << "Can not open shader source file: " << path << '\n';
-            throw std::runtime_error("Shader file not found!");
-        }
-        return std::string{(std::istreambuf_iterator<char>(fs)),
-                           std::istreambuf_iterator<char>()};
-    };
-
-    auto& simple_shader = shader_programs(
-        "simple_shader", read_shader_source("shader/simple_2D.vert"),
-        read_shader_source("shader/drawing.frag"));
-
-    auto& draw_texture_shader = shader_programs(
-        "draw_texture", read_shader_source("shader/simple_2D.vert"),
-        read_shader_source("shader/draw_texture.frag"));
-
-    // compile JFA computing shader
-    auto& compute_shader =
-        shader_programs("JFA", read_shader_source("shader/simple_2D.vert"),
-                        read_shader_source("shader/JFA.frag"));
-
-    std::cout << "Shader compilation success.\n";
-
-    simple_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
-                                             canvas_height);
-    draw_texture_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
-                                                   canvas_height);
-    compute_shader.set_uniform_value<GLfloat>("canvas_size", canvas_width,
-                                              canvas_height);
 
     initial_device_objects();
 
     GLuint bindingPoint = 0;
     glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
 
-    simple_shader.bind_uniform_block("user_data", bindingPoint);
-    draw_texture_shader.set_uniform_value<GLint>("board", 0);
-    draw_texture_shader.bind_uniform_block("user_data", bindingPoint);
-    compute_shader.set_uniform_value<GLint>("board", 0);
-    compute_shader.bind_uniform_block("user_data", bindingPoint);
+    // Create shader program
+    {
+        auto read_shader_source = [](const std::string& path) {
+            std::fstream fs(path);
+            if (!fs.is_open()) {
+                std::cout << "Can not open shader source file: " << path
+                          << '\n';
+                throw std::runtime_error("Shader file not found!");
+            }
+            return std::string{(std::istreambuf_iterator<char>(fs)),
+                               std::istreambuf_iterator<char>()};
+        };
 
-    auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event, void*) {
-        if (key_event->code == std::string{"KeyF"}) {
-            get_random_sites(get_sites().size());
-            draw();
-            return EM_TRUE;
-        }
-        return EM_FALSE;
-    };
-    auto handle_mouse_click = [](int, const EmscriptenMouseEvent* mouse_event,
-                                 void*) {
-        Vec<2, float> pos(mouse_event->targetX, mouse_event->targetY);
-        get_sites().emplace_back(normalize_coord(pos), random_color());
-        draw();
-        return EM_TRUE;
-    };
-    emscripten_set_keydown_callback("body", nullptr, false, handle_key);
-    emscripten_set_click_callback(canvas, nullptr, false, handle_mouse_click);
+        shader_programs("simple_shader",
+                        read_shader_source("shader/simple_2D.vert"),
+                        read_shader_source("shader/drawing.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .bind_uniform_block("user_data", bindingPoint);
+        shader_programs("draw_texture",
+                        read_shader_source("shader/simple_2D.vert"),
+                        read_shader_source("shader/draw_texture.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .set_uniform_value<GLint>("board", 0)
+            .bind_uniform_block("user_data", bindingPoint);
+        shader_programs("JFA", read_shader_source("shader/simple_2D.vert"),
+                        read_shader_source("shader/JFA.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .set_uniform_value<GLint>("board", 0)
+            .bind_uniform_block("user_data", bindingPoint);
 
-    std::cout << "Press F to get new random sites.\n";
+        std::cout << "Shader compilation success.\n";
+    }
 
+    // handle mouse/keyboard input
+    {
+        auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event,
+                             void*) {
+            if (key_event->code == std::string{"KeyF"}) {
+                get_random_sites(get_sites().size());
+                draw();
+                return EM_TRUE;
+            }
+            return EM_FALSE;
+        };
+        auto handle_mouse_click =
+            [](int, const EmscriptenMouseEvent* mouse_event, void*) {
+                Vec<2, float> pos(mouse_event->targetX, mouse_event->targetY);
+                get_sites().emplace_back(normalize_coord(pos), random_color());
+                draw();
+                return EM_TRUE;
+            };
+        emscripten_set_keydown_callback("body", nullptr, false, handle_key);
+        emscripten_set_click_callback(canvas, nullptr, false,
+                                      handle_mouse_click);
+
+        std::cout << "Press F to get new random sites.\n";
+    }
     return 0;
 }

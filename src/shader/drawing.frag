@@ -32,11 +32,10 @@ void render_smooth(float dist, float elem_size, vec3 color) {
 
 void main() {
     float aspect_ratio = canvas_size.x / canvas_size.y;
-    vec2 uv = (gl_FragCoord.xy / canvas_size) - vec2(.5, .5);
-    uv.x *= aspect_ratio;
-    // uv is normalized coordinate with y from -.5 to .5 and x from -a/2 to a/2, 
+    vec2 uv = gl_FragCoord.xy / canvas_size * vec2(aspect_ratio, 1.);
+    // uv is normalized coordinate with y from 0. to 1. and x from 0. to a, 
     // starting from lower-left corner, where a is aspect ratio.
-    // (Note: it depends on the qualifier `origin_upper_left` and `pixel_center_integer` of gl_FragCoord)
+    // (Note: this behaviour depends on the qualifier `origin_upper_left` and `pixel_center_integer` of gl_FragCoord)
 
     bool draw_site = bool(style & 1u);
     bool draw_frame = bool(style & 2u);
@@ -58,7 +57,7 @@ void main() {
     }
     // iterate over sites
     for(uint i = 0u; i < site_array_size; ++i) {
-        float dist = distance(uv, sites[i].pos);
+        float dist = distance(uv, sites[i].pos * vec2(aspect_ratio, 1.));
         if(dist < point_size + aa_width && draw_site) {
             frag_color = vec4(sites[i].color, 1.); // set current block color
             render_smooth(dist, point_size, vec3(0.));
@@ -81,7 +80,8 @@ void main() {
     }
 
     for(uint i = 1u; i < N; ++i) {
-        dists[i] = (dists[i] - dists[0]) * (dists[i] + dists[0]) / (2. * distance(sites[indices[0]].pos, sites[indices[i]].pos));
+        float site_dist = distance(sites[indices[0]].pos * vec2(aspect_ratio, 1.), sites[indices[i]].pos * vec2(aspect_ratio, 1.));
+        dists[i] = (dists[i] - dists[0]) * (dists[i] + dists[0]) / (2. * site_dist);
         if(dists[i] < dists[1]) {
             dists[1] = dists[i];
             indices[1] = indices[i];
