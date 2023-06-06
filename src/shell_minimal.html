@@ -79,6 +79,11 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         row-gap: 10px;
+        align-items: center;
+      }
+
+      #style-control > fieldset > div {
+        display: inline;
       }
     </style>
   </head>
@@ -93,6 +98,25 @@
       <progress value="0" max="100" id="progress" hidden="1"></progress>
     </div>
     <div class="emscripten" style="margin-bottom: 1em" id="style-control">
+      <fieldset
+        style="
+          grid-column: auto / span 2;
+          display: flex;
+          justify-content: space-around;
+        "
+      >
+        <div>
+          <input type="radio" name="method" value="brute_force" checked /><label
+            for="brute_force"
+            >Brute force</label
+          >
+        </div>
+        <div>
+          <input type="radio" name="method" value="JFA" /><label for="JFA"
+            >JFA</label
+          >
+        </div>
+      </fieldset>
       <div style="grid-column: auto / span 2">
         <input
           type="range"
@@ -149,6 +173,8 @@
       var progressElement = document.getElementById("progress");
       var spinnerElement = document.getElementById("spinner");
 
+      const method_selection = document.getElementsByName("method");
+
       const INIT_SITE_NUM = 32;
       const site_num = document.getElementById("site_number");
       const site_num_output = site_num.nextElementSibling.firstElementChild;
@@ -157,47 +183,47 @@
       const line_width = document.getElementById("line_width");
       const line_width_output = line_width.nextElementSibling.firstElementChild;
 
-      document
-        .getElementById("download_frame")
-        .addEventListener("click", () => {
-          if (!draw_frame.checked) {
-            alert("You are not in draw frame mode!");
-            return;
-          }
-          const pixelCount =
-            GLctx.drawingBufferWidth * GLctx.drawingBufferHeight;
-          const pixels = new Uint8Array(pixelCount * 4);
-          GLctx.readPixels(
-            0,
-            0,
-            GLctx.drawingBufferWidth,
-            GLctx.drawingBufferHeight,
-            GLctx.RGBA,
-            GLctx.UNSIGNED_BYTE,
-            pixels
-          );
+      const download_frame = document.getElementById("download_frame");
+      download_frame.addEventListener("click", () => {
+        if (!draw_frame.checked) {
+          alert("You are not in draw frame mode!");
+          return;
+        }
+        const pixelCount = GLctx.drawingBufferWidth * GLctx.drawingBufferHeight;
+        const pixels = new Uint8Array(pixelCount * 4);
+        GLctx.readPixels(
+          0,
+          0,
+          GLctx.drawingBufferWidth,
+          GLctx.drawingBufferHeight,
+          GLctx.RGBA,
+          GLctx.UNSIGNED_BYTE,
+          pixels
+        );
 
-          const alphas = new Float32Array(pixelCount);
-          for (let i = 0; i < pixelCount; ++i) {
-            alphas[i] = pixels[4 * i + 3] / 255;
-          }
-          const a = document.createElement("a");
-          a.setAttribute(
-            "href",
-            window.URL.createObjectURL(
-              new Blob([alphas], { type: "Application/octet-stream" })
-            )
-          );
-          a.setAttribute("download", "frame_data");
-          a.click();
-        });
+        const alphas = new Float32Array(pixelCount);
+        for (let i = 0; i < pixelCount; ++i) {
+          alphas[i] = pixels[4 * i + 3] / 255;
+        }
+        const a = document.createElement("a");
+        a.setAttribute(
+          "href",
+          window.URL.createObjectURL(
+            new Blob([alphas], { type: "Application/octet-stream" })
+          )
+        );
+        a.setAttribute("download", "frame_data");
+        a.click();
+      });
 
       var Module = {
         preRun: [],
         postRun: [
           () => {
+            _set_method(method_selection[0].checked);
             site_num.value = INIT_SITE_NUM;
             site_num_output.textContent = INIT_SITE_NUM;
+            line_width_output.textContent = line_width.value;
             _draw_some_sites(
               INIT_SITE_NUM,
               draw_site.checked,
@@ -286,6 +312,18 @@
         };
       };
 
+      method_selection.forEach((input) => {
+        input.addEventListener("input", (e) => {
+          e.preventDefault();
+          if (e.target.checked) {
+            const old_method = e.target.value === "brute_force";
+            _set_method(old_method);
+            [draw_site, draw_frame, line_width, download_frame].forEach((i) => {
+              i.disabled = !old_method;
+            });
+          }
+        });
+      });
       site_num.addEventListener("input", (e) => {
         e.preventDefault();
         const site_num = parseInt(e.target.value);

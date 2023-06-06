@@ -10,7 +10,7 @@ set_target_properties(index PROPERTIES SUFFIX .html)
 
 string(JOIN "" shell_file ${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html)
 
-target_link_options(index PUBLIC -sEXPORTED_FUNCTIONS=_main,_draw_some_sites)
+target_link_options(index PUBLIC -sEXPORTED_FUNCTIONS=_main,_draw_some_sites,_set_method)
 target_link_options(index PUBLIC --shell-file ${shell_file}) # specify html template
 target_link_options(index PUBLIC -sMIN_WEBGL_VERSION=2) # use webgl2
 target_link_options(index PUBLIC -sOFFSCREENCANVAS_SUPPORT) # off screen canvas

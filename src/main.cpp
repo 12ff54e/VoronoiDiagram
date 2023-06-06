@@ -270,6 +270,11 @@ void draw_some_sites(std::size_t num = get_sites().size(),
     if (line_width_ > 0) { line_width = line_width_; }
     draw();
 }
+
+void set_method(bool);
+void set_method(bool old_method_) {
+    old_method = old_method_;
+}
 }
 
 int main() {
