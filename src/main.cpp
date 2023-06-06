@@ -1,5 +1,6 @@
 #include <emscripten/html5.h>  // for H5 event handling
 #include <webgl/webgl2.h>      // for all the gl* staff
+#include <chrono>  // std::high_resolution_clock, std::chrono::duration
 #include <fstream>             // std::ifstream
 #include <functional>          // std::bind
 #include <iostream>            // std::cout
@@ -333,11 +334,22 @@ int main() {
 
     // handle mouse/keyboard input
     {
+        using namespace std::chrono;
+        static auto t = high_resolution_clock::now();
+
         auto handle_key = [](int, const EmscriptenKeyboardEvent* key_event,
-                             void*) {
+                             void* ptr) {
+            auto now = high_resolution_clock::now();
+            auto& last_call_time = *static_cast<decltype(now)*>(ptr);
+
+            if (now - last_call_time <
+                std::chrono::duration<double, std::ratio<1, 24>>{1}) {
+                return EM_FALSE;
+            }
             if (key_event->code == std::string{"KeyF"}) {
                 get_random_sites(get_sites().size());
                 draw();
+                last_call_time = now;
                 return EM_TRUE;
             }
             return EM_FALSE;
@@ -349,7 +361,7 @@ int main() {
                 draw();
                 return EM_TRUE;
             };
-        emscripten_set_keydown_callback("body", nullptr, false, handle_key);
+        emscripten_set_keydown_callback("body", &t, false, handle_key);
         emscripten_set_click_callback(canvas, nullptr, false,
                                       handle_mouse_click);
 
