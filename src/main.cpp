@@ -14,21 +14,19 @@
 constexpr int canvas_width = 1920;
 constexpr int canvas_height = 1080;
 
-// vertex array buffer
-static GLuint quad_vao;
-// uniform buffer id
-static GLuint ubo;
-// frame buffer id
-static GLuint fbo;
-// textures
-static GLuint textures[2];
-
 static bool old_method = false;
 
 constexpr unsigned MAX_ARRAY_SIZE = 4096;
 
 static GLuint style;
 static int line_width = 1;
+
+struct DeviceObjects {
+    GLuint screen_quad_vao;
+    GLuint ubo;
+    GLuint fbo;
+    GLuint textures[2];
+};
 
 struct Site {
     Vec<2, float> pos;
@@ -111,29 +109,36 @@ static auto& shader_programs(const std::string& name) {
     return shader_programs().at(name);
 }
 
-static void initial_device_objects() {
+static auto& get_device_object() {
+    static DeviceObjects device_object;
+    return device_object;
+}
+
+static auto& initial_device_objects() {
+    auto& device_object = get_device_object();
+
     // uniform buffer for site data
-    glGenBuffers(1, &ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+    glGenBuffers(1, &device_object.ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, device_object.ubo);
     glBufferData(GL_UNIFORM_BUFFER, MAX_ARRAY_SIZE * Site::std140_padded_size,
                  nullptr, GL_DYNAMIC_DRAW);
 
     // ping-pong textures for JFA
-    glGenTextures(2, textures);
+    glGenTextures(2, device_object.textures);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, textures[0]);
+    glBindTexture(GL_TEXTURE_2D, device_object.textures[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
                  GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
-    glBindTexture(GL_TEXTURE_2D, textures[1]);
+    glBindTexture(GL_TEXTURE_2D, device_object.textures[1]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
                  GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
 
     // frame buffer
-    glGenFramebuffers(1, &fbo);
+    glGenFramebuffers(1, &device_object.fbo);
 
     // Prepare data for the full-screen quad
 
@@ -147,8 +152,8 @@ static void initial_device_objects() {
     constexpr unsigned color_size = 3;
     constexpr unsigned vertex_size = pos_size + color_size;
 
-    glGenVertexArrays(1, &quad_vao);
-    glBindVertexArray(quad_vao);
+    glGenVertexArrays(1, &device_object.screen_quad_vao);
+    glBindVertexArray(device_object.screen_quad_vao);
 
     GLuint vbo;
     glGenBuffers(1, &vbo);
@@ -163,6 +168,8 @@ static void initial_device_objects() {
     glVertexAttribPointer(1, color_size, GL_FLOAT, GL_FALSE,
                           sizeof(GLfloat) * vertex_size,
                           reinterpret_cast<void*>(sizeof(GLfloat) * pos_size));
+
+    return device_object;
 }
 
 /**
@@ -171,7 +178,8 @@ static void initial_device_objects() {
  * @return texture id
  */
 static GLuint voronoi_tesselation() {
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    auto& device_object = get_device_object();
+    glBindFramebuffer(GL_FRAMEBUFFER, device_object.fbo);
 
     auto& shader = shader_programs("JFA");
     shader.use();
@@ -182,30 +190,31 @@ static GLuint voronoi_tesselation() {
                         std::log2(std::max(canvas_width, canvas_height)))) +
                     1;
 
-    int step_size_x = canvas_width;
-    int step_size_y = canvas_height;
+    Vec<2, GLint> step_size{canvas_width, canvas_height};
     for (std::size_t i = 0; i < step_num; ++i) {
-        shader.set_uniform_value<GLint>("step_size", step_size_x, step_size_y);
+        shader.set_uniform_value<GLint>("step_size", step_size.x(),
+                                        step_size.y());
 
         // input texture
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, textures[i % 2]);
+        glBindTexture(GL_TEXTURE_2D, device_object.textures[i % 2]);
         // output texture
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, textures[1 - i % 2], 0);
+                               GL_TEXTURE_2D, device_object.textures[1 - i % 2],
+                               0);
 
         // Draw the full-screen quad, to let OpenGL invoke fragment shader
-        glBindVertexArray(quad_vao);
+        glBindVertexArray(device_object.screen_quad_vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        step_size_x = static_cast<int>(std::ceil(.5 * step_size_x));
-        step_size_y = static_cast<int>(std::ceil(.5 * step_size_y));
+        step_size = (step_size + Vec<2, GLint>{1, 1}) / 2;
     }
 
-    return textures[step_num % 2];
+    return device_object.textures[step_num % 2];
 }
 
 // main loop
 static void draw() {
+    auto& device_object = get_device_object();
     auto& current_sites = get_sites();
     // update uniform buffer storing site data
     {
@@ -222,7 +231,7 @@ static void draw() {
             ptr[8 * i + 5] = current_sites[i].color.y();
             ptr[8 * i + 6] = current_sites[i].color.z();
         }
-        glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+        glBindBuffer(GL_UNIFORM_BUFFER, device_object.ubo);
         glBufferSubData(
             GL_UNIFORM_BUFFER, 0,
             static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
@@ -253,7 +262,7 @@ static void draw() {
     }
 
     // Draw the full-screen quad, to let OpenGL invoke fragment shader
-    glBindVertexArray(quad_vao);
+    glBindVertexArray(device_object.screen_quad_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
@@ -296,10 +305,10 @@ int main() {
         std::cout << glGetString(GL_VERSION) << '\n';
     }
 
-    initial_device_objects();
+    auto& device_object = initial_device_objects();
 
     GLuint bindingPoint = 0;
-    glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, ubo);
+    glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, device_object.ubo);
 
     // Create shader program
     {
