@@ -35,7 +35,8 @@ void main() {
     vec2 uv = gl_FragCoord.xy / canvas_size * vec2(aspect_ratio, 1.);
     // uv is normalized coordinate with y from 0. to 1. and x from 0. to a, 
     // starting from lower-left corner, where a is aspect ratio.
-    // (Note: this behaviour depends on the qualifier `origin_upper_left` and `pixel_center_integer` of gl_FragCoord)
+    // (Note: this behaviour depends on the qualifier `origin_upper_left` and `pixel_center_integer` of gl_FragCoord, 
+    // but both are absent in OpenGL ES Shading Language spec)
 
     bool draw_site = bool(style & 1u);
     bool draw_frame = bool(style & 2u);

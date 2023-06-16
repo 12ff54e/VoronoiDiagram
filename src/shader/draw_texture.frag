@@ -20,7 +20,6 @@ layout(std140) uniform user_data {
 };
 
 void main() {
-    vec2 uv = gl_FragCoord.xy / canvas_size;
-    uint idx = texture(board, uv).b;
+    uint idx = texelFetch(board, ivec2(gl_FragCoord), 0).b;
     frag_color = vec4(sites[idx - 1u].color, 1.);
 }

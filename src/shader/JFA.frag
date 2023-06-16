@@ -40,13 +40,13 @@ void main() {
     float dist = 2. * max(canvas_size.x, canvas_size.y);
     for(int i = -1; i <= 1; ++i) {
         for(int j = -1; j <= 1; ++j) {
-            vec2 uv = (gl_FragCoord.xy + vec2(i * step_size.x, j * step_size.y)) / canvas_size;
+            ivec2 coord = ivec2(gl_FragCoord) + ivec2(i, j) * step_size;
             // out of boundary check
-            if(uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) {
+            if(coord.x < 0 || coord.x >= int(canvas_size.x) || coord.y < 0 || coord.y >= int(canvas_size.y)) {
                 continue;
             }
             // sample
-            uvec4 state = texture(board, uv);
+            uvec4 state = texelFetch(board, coord, 0);
             if(state.b == 0u) {
                 continue;
             }
