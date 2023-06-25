@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <variant>
 
 /**
  * @brief The shader class is essentially a pointer to program in OpenGL
@@ -12,8 +13,13 @@
  */
 class ShaderProgram {
    private:
+    template <typename T>
+    using arr_type = std::array<T, 4>;
+    using buffer_type =
+        std::variant<arr_type<GLint>, arr_type<GLuint>, arr_type<GLfloat>>;
+
     GLuint id;
-    std::unordered_map<std::string, GLint> uniforms_;
+    std::unordered_map<std::string, std::pair<GLint, buffer_type>> uniforms_;
 
     static auto compile(GLenum, const std::string&);
     static auto err_check(GLuint, int, const std::string&);
@@ -37,12 +43,25 @@ class ShaderProgram {
     ShaderProgram& set_uniform_value(const std::string& name, Ts... args) {
         use();
         auto iter = uniforms_.find(name);
-        if (iter == uniforms_.end()) {
-            iter =
-                uniforms_.emplace(name, glGetUniformLocation(id, name.c_str()))
-                    .first;
+        arr_type<T> vals{static_cast<T>(args)...};
+        try {
+            if (iter == uniforms_.end()) {
+                iter = uniforms_
+                           .emplace(name, std::make_pair(glGetUniformLocation(
+                                                             id, name.c_str()),
+                                                         vals))
+                           .first;
+            } else if (std::get<arr_type<T>>(iter->second.second) == vals) {
+                return *this;
+            } else {
+                iter->second.second = vals;
+            }
+        } catch (std::exception& e) {
+            std::cout << "Uniform " << name
+                      << " has different type than that in last call.\n";
+            throw e;
         }
-        auto loc = iter->second;
+        auto loc = iter->second.first;
 
         // dispatch calls to glUniform{1,2,3,4}{i,ui,f} functions.
 #define num_branch(n)                                            \
