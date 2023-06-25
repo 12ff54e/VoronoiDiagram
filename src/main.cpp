@@ -1,31 +1,43 @@
 #include <emscripten/html5.h>  // for H5 event handling
 #include <webgl/webgl2.h>      // for all the gl* staff
-#include <chrono>  // std::high_resolution_clock, std::chrono::duration
-#include <fstream>             // std::ifstream
-#include <functional>          // std::bind
-#include <iostream>            // std::cout
-#include <memory>              // std::unique_ptr
+#include <chrono>      // std::high_resolution_clock, std::chrono::duration
+#include <fstream>     // std::ifstream
+#include <functional>  // std::bind
+#include <iostream>    // std::cout
+#include <memory>      // std::unique_ptr
 #include <random>  // std::random_device, std::mt19937, std::uniform_real_distribution
 #include <vector>  // std::vector
 #include "Shader.hpp"
 #include "Vec.hpp"
 
+// global constants
+
 #define canvas "#canvas"  // canvas query selector
 constexpr int canvas_width = 1920;
 constexpr int canvas_height = 1080;
-
-static bool old_method = false;
-
 constexpr unsigned MAX_ARRAY_SIZE = 4096;
-
-static GLuint style;
-static int line_width = 1;
 
 struct DeviceObjects {
     GLuint screen_quad_vao;
     GLuint ubo;
     GLuint fbo;
-    GLuint textures[2];
+    GLuint sites_texture;
+    GLuint tessellation_textures[2];
+    GLuint lloyd_texture[2];
+};
+
+struct State {
+    bool brute_force;
+    bool update_uniforms;
+    GLuint style;
+    GLuint line_width;
+    double timestamp;  // record timestamp of changing sites
+    std::pair<std::size_t, std::size_t> update_site_range;
+
+    bool update_sites() const {
+        return update_site_range.second > update_site_range.first;
+    }
+    void reset_update_site_range() { update_site_range = {0, 0}; }
 };
 
 struct Site {
@@ -34,8 +46,6 @@ struct Site {
 
     static constexpr std::size_t std140_padded_size = sizeof(float) * 8;
 };
-
-// constexpr std::size_t SITE_NUM = 1024;
 
 #define exec_and_check(func, ...)                             \
     do {                                                      \
@@ -110,28 +120,40 @@ static auto& shader_programs(const std::string& name) {
 }
 
 static auto& get_device_object() {
-    static DeviceObjects device_object;
+    // Since zero in most case is the reserved value for object ID in OpenGL,
+    // value initialize all the IDs prevents unintentional deletion of any
+    // device object
+    static DeviceObjects device_object{};
     return device_object;
+}
+
+static auto& get_state() {
+    static State state{.timestamp = -1.};
+    return state;
 }
 
 static auto& initial_device_objects() {
     auto& device_object = get_device_object();
 
-    // uniform buffer for site data
-    glGenBuffers(1, &device_object.ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, device_object.ubo);
-    glBufferData(GL_UNIFORM_BUFFER, MAX_ARRAY_SIZE * Site::std140_padded_size,
-                 nullptr, GL_DYNAMIC_DRAW);
+    // texture storing site information
+    glGenTextures(1, &device_object.sites_texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI,
+                 static_cast<GLsizei>(MAX_ARRAY_SIZE), 2, 0, GL_RGBA_INTEGER,
+                 GL_UNSIGNED_INT, nullptr);
 
     // ping-pong textures for JFA
-    glGenTextures(2, device_object.textures);
+    glGenTextures(2, device_object.tessellation_textures);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, device_object.textures[0]);
+    glBindTexture(GL_TEXTURE_2D, device_object.tessellation_textures[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
                  GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
-    glBindTexture(GL_TEXTURE_2D, device_object.textures[1]);
+    glBindTexture(GL_TEXTURE_2D, device_object.tessellation_textures[1]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
@@ -185,6 +207,9 @@ static GLuint voronoi_tesselation() {
     shader.use();
     shader.set_uniform_value<GLuint>("site_array_size", get_sites().size());
 
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+
     // the extra step is for initialize texture with sites
     auto step_num = static_cast<std::size_t>(std::ceil(
                         std::log2(std::max(canvas_width, canvas_height)))) +
@@ -196,12 +221,13 @@ static GLuint voronoi_tesselation() {
                                         step_size.y());
 
         // input texture
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, device_object.textures[i % 2]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D,
+                      device_object.tessellation_textures[i % 2]);
         // output texture
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, device_object.textures[1 - i % 2],
-                               0);
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+            device_object.tessellation_textures[1 - i % 2], 0);
 
         // Draw the full-screen quad, to let OpenGL invoke fragment shader
         glBindVertexArray(device_object.screen_quad_vao);
@@ -209,55 +235,141 @@ static GLuint voronoi_tesselation() {
         step_size = (step_size + Vec<2, GLint>{1, 1}) / 2;
     }
 
-    return device_object.textures[step_num % 2];
+    return device_object.tessellation_textures[step_num % 2];
+}
+
+static void lloyd(GLuint board_texture) {
+    auto& device_object = get_device_object();
+    glBindFramebuffer(GL_FRAMEBUFFER, device_object.fbo);
+
+    GLuint patches_per_quad = 9;
+    GLuint site_num = get_sites().size();
+    auto& shader = shader_programs("Lloyd");
+    shader.set_uniform_value<GLuint>("site_num", site_num)
+        .set_uniform_value<GLuint>("patches_per_quad", patches_per_quad)
+        .set_uniform_value<GLuint>("patches_per_line", 3);
+    // TODO: Dynamically change patches per quad according to number of sites
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, board_texture);
+
+    // ping-pong texture for Lloyd
+    glDeleteTextures(2, device_object.lloyd_texture);
+    glGenTextures(2, device_object.lloyd_texture);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[0]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, static_cast<GLsizei>(site_num),
+                 static_cast<GLsizei>(4 * patches_per_quad + 1), 0,
+                 GL_RGBA_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[1]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, static_cast<GLsizei>(site_num),
+                 static_cast<GLsizei>(4 * patches_per_quad + 1), 0,
+                 GL_RGBA_INTEGER, GL_UNSIGNED_INT, nullptr);
+
+    auto step_num =
+        static_cast<GLuint>(std::ceil(std::log2(4 * patches_per_quad))) + 1;
+    for (GLuint step = 0; step < step_num; ++step) {
+        shader.set_uniform_value<GLuint>("reduction_step", step);
+
+        // input texture
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[step % 2]);
+        // output texture
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D,
+                               device_object.lloyd_texture[1 - step % 2], 0);
+
+        // Draw the full-screen quad, to let OpenGL invoke fragment shader
+        glBindVertexArray(device_object.screen_quad_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
+
+    if constexpr (false) {
+        auto pixels = std::make_unique<GLuint[]>(4);
+        glReadPixels(0, 0, 1, 1, GL_RGBA_INTEGER, GL_UNSIGNED_INT,
+                     pixels.get());
+        std::cout << "avg moving distance: "
+                  << static_cast<GLfloat>(pixels[0]) / GLfloat{10} << "px\n";
+    }
+
+    // copy new site position into site_info
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 1,
+                        static_cast<GLsizei>(site_num), 1);
 }
 
 // main loop
 static void draw() {
     auto& device_object = get_device_object();
     auto& current_sites = get_sites();
-    // update uniform buffer storing site data
-    {
-        // pad every site to two vec4
-        std::size_t padded_data_size =
-            current_sites.size() * Site::std140_padded_size / sizeof(float);
-        auto ptr = std::make_unique<float[]>(padded_data_size);
+    auto& state = get_state();
 
-        for (std::size_t i = 0; i < current_sites.size(); ++i) {
-            ptr[8 * i] = current_sites[i].pos.x();
-            ptr[8 * i + 1] = current_sites[i].pos.y();
+    // update texture storing site data
+    if (state.update_sites()) {
+        const auto count =
+            state.update_site_range.second - state.update_site_range.first;
+        auto pixels = std::make_unique<GLuint[]>(2 * 4 * count);
 
-            ptr[8 * i + 4] = current_sites[i].color.x();
-            ptr[8 * i + 5] = current_sites[i].color.y();
-            ptr[8 * i + 6] = current_sites[i].color.z();
+        for (std::size_t i = 0; i < count; ++i) {
+            auto site_idx = i + state.update_site_range.first;
+            pixels[4 * i + 2] = static_cast<GLuint>(
+                std::round(current_sites[site_idx].pos.x() * canvas_width));
+            pixels[4 * i + 3] = static_cast<GLuint>(
+                std::round(current_sites[site_idx].pos.y() * canvas_height));
+            pixels[count * 4 + 4 * i] = static_cast<GLuint>(
+                current_sites[site_idx].color.x() * (0xffffu));
+            pixels[count * 4 + 4 * i + 1] = static_cast<GLuint>(
+                current_sites[site_idx].color.y() * (0xffffu));
+            pixels[count * 4 + 4 * i + 2] = static_cast<GLuint>(
+                current_sites[site_idx].color.z() * (0xffffu));
         }
-        glBindBuffer(GL_UNIFORM_BUFFER, device_object.ubo);
-        glBufferSubData(
-            GL_UNIFORM_BUFFER, 0,
-            static_cast<GLsizeiptr>(sizeof(float) * padded_data_size),
-            ptr.get());
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0,
+                        static_cast<GLsizei>(state.update_site_range.first), 0,
+                        static_cast<GLsizei>(count), 2, GL_RGBA_INTEGER,
+                        GL_UNSIGNED_INT, pixels.get());
+
+        state.reset_update_site_range();
     }
 
-    if (old_method) {
+    if (state.brute_force) {
         // set background color to grey
         glClearColor(0.3f, 0.3f, 0.3f, 1.f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        shader_programs("simple_shader")
-            .set_uniform_value<GLuint>("site_array_size", current_sites.size())
-            .set_uniform_value<GLuint>("style", style)
-            .set_uniform_value<GLfloat>("line_width",
-                                        static_cast<float>(line_width) /
-                                            static_cast<float>(canvas_height))
-            .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
+        shader_programs("brute_force_shader")
+            .set_uniform_value<GLuint>("site_array_size", current_sites.size());
+        if (state.update_uniforms) {
+            shader_programs("brute_force_shader")
+                .set_uniform_value<GLuint>("style", state.style)
+                .set_uniform_value<GLfloat>(
+                    "line_width", static_cast<float>(state.line_width) /
+                                      static_cast<float>(canvas_height))
+                .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
+            state.update_uniforms = false;
+        }
     } else {
-        auto texture = voronoi_tesselation();
+        auto board = voronoi_tesselation();
+        lloyd(board);
 
         shader_programs("draw_texture")
             .set_uniform_value<GLuint>("site_array_size", current_sites.size());
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture);
+        glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, board);
+        // switch render target back to screen
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
@@ -267,22 +379,37 @@ static void draw() {
 }
 
 extern "C" {
-void draw_some_sites(std::size_t, bool, bool, bool, int);
-void draw_some_sites(std::size_t num = get_sites().size(),
-                     bool draw_site = true,
-                     bool draw_frame = false,
-                     bool keep_sites = false,
-                     int line_width_ = -1) {
-    if (!keep_sites) { get_random_sites(num); }
-    style = unsigned(draw_site) + (unsigned(draw_frame) << 1) +
-            (draw_frame ? 0u : 4u);
-    if (line_width_ > 0) { line_width = line_width_; }
-    draw();
-}
-
-void set_method(bool);
-void set_method(bool old_method_) {
-    old_method = old_method_;
+/**
+ * @brief Expose to web for changing state of the drawing
+ *
+ */
+EMSCRIPTEN_KEEPALIVE void alter_state(bool,
+                                      std::size_t,
+                                      bool,
+                                      bool,
+                                      GLuint,
+                                      double);
+void alter_state(bool brute_force,
+                 std::size_t site_num,
+                 bool draw_site,
+                 bool draw_frame,
+                 GLuint line_width,
+                 double timestamp) {
+    auto& state = get_state();
+    GLuint style = unsigned(draw_site) + (unsigned(draw_frame) << 1) +
+                   (draw_frame ? 0u : 4u);
+    if (state.style != style || state.line_width != line_width) {
+        state.update_uniforms = true;
+        state.style = style;
+        state.line_width = line_width;
+    }
+    // if site num slider is dragged
+    if (site_num != get_sites().size() && timestamp > state.timestamp) {
+        get_random_sites(site_num);
+        state.update_site_range = {0, site_num};
+        state.timestamp = timestamp;
+    }
+    state.brute_force = brute_force;
 }
 }
 
@@ -305,10 +432,7 @@ int main() {
         std::cout << glGetString(GL_VERSION) << '\n';
     }
 
-    auto& device_object = initial_device_objects();
-
-    GLuint bindingPoint = 0;
-    glBindBufferBase(GL_UNIFORM_BUFFER, bindingPoint, device_object.ubo);
+    initial_device_objects();
 
     // Create shader program
     {
@@ -323,25 +447,33 @@ int main() {
                                std::istreambuf_iterator<char>()};
         };
 
-        shader_programs("simple_shader",
+        shader_programs("brute_force_shader",
                         read_shader_source("shader/simple_2D.vert"),
                         read_shader_source("shader/drawing.frag"))
             .set_uniform_value<GLfloat>("canvas_size", canvas_width,
                                         canvas_height)
-            .bind_uniform_block("user_data", bindingPoint);
+            .set_uniform_value<GLint>("site_info", 0);
         shader_programs("draw_texture",
                         read_shader_source("shader/simple_2D.vert"),
                         read_shader_source("shader/draw_texture.frag"))
             .set_uniform_value<GLfloat>("canvas_size", canvas_width,
                                         canvas_height)
-            .set_uniform_value<GLint>("board", 0)
-            .bind_uniform_block("user_data", bindingPoint);
+            .set_uniform_value<GLint>("site_info", 0)
+            .set_uniform_value<GLint>("board", 1);
         shader_programs("JFA", read_shader_source("shader/simple_2D.vert"),
                         read_shader_source("shader/JFA.frag"))
             .set_uniform_value<GLfloat>("canvas_size", canvas_width,
                                         canvas_height)
-            .set_uniform_value<GLint>("board", 0)
-            .bind_uniform_block("user_data", bindingPoint);
+            .set_uniform_value<GLint>("site_info", 0)
+            .set_uniform_value<GLint>("board", 1);
+
+        shader_programs("Lloyd", read_shader_source("shader/simple_2D.vert"),
+                        read_shader_source("shader/Lloyd.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .set_uniform_value<GLint>("site_info", 0)
+            .set_uniform_value<GLint>("board", 1)
+            .set_uniform_value<GLint>("prev_sites", 2);
 
         std::cout << "Shader compilation success.\n";
     }
@@ -361,7 +493,11 @@ int main() {
                 return EM_FALSE;
             }
             if (key_event->code == std::string{"KeyF"}) {
-                get_random_sites(get_sites().size());
+                auto site_num = get_sites().size();
+                get_random_sites(site_num);
+                auto& state = get_state();
+                state.update_site_range = {0, site_num};
+                state.timestamp = emscripten_performance_now();
                 draw();
                 last_call_time = now;
                 return EM_TRUE;
@@ -371,7 +507,12 @@ int main() {
         auto handle_mouse_click =
             [](int, const EmscriptenMouseEvent* mouse_event, void*) {
                 Vec<2, float> pos(mouse_event->targetX, mouse_event->targetY);
-                get_sites().emplace_back(normalize_coord(pos), random_color());
+                auto& sites = get_sites();
+                sites.emplace_back(normalize_coord(pos), random_color());
+                auto& state = get_state();
+                state.update_site_range = {sites.size() - 1, sites.size()};
+                state.timestamp = emscripten_performance_now();
+
                 draw();
                 return EM_TRUE;
             };
@@ -381,5 +522,7 @@ int main() {
 
         std::cout << "Press F to get new random sites.\n";
     }
+
+    emscripten_set_main_loop(draw, 0, EM_FALSE);
     return 0;
 }

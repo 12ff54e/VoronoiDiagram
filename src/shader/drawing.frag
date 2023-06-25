@@ -1,5 +1,6 @@
 #version 300 es
 precision mediump float;
+precision mediump usampler2D;
 
 #define MAX_ARRAY_SIZE 4096
 
@@ -8,15 +9,7 @@ uniform uint site_array_size;
 uniform uint style;
 uniform float line_width;
 uniform vec3 line_color;
-
-struct Site {
-    vec2 pos;
-    vec3 color;
-};
-
-layout(std140) uniform user_data {
-    Site sites[MAX_ARRAY_SIZE];
-};
+uniform usampler2D site_info;
 
 in vec3 color;
 out vec4 frag_color;
@@ -58,9 +51,11 @@ void main() {
     }
     // iterate over sites
     for(uint i = 0u; i < site_array_size; ++i) {
-        float dist = distance(uv, sites[i].pos * vec2(aspect_ratio, 1.));
+        vec2 site_pos = vec2(texelFetch(site_info, ivec2(i, 0), 0).pq);
+        vec3 site_color = vec3(texelFetch(site_info, ivec2(i, 1), 0)) / float(0xffffu);
+        float dist = distance(gl_FragCoord.xy, site_pos) / canvas_size.y;
         if(dist < point_size + aa_width && draw_site) {
-            frag_color = vec4(sites[i].color, 1.); // set current block color
+            frag_color = vec4(site_color, 1.); // set current block color
             render_smooth(dist, point_size, vec3(0.));
             return;
         } else if(dist < dists[N - 1u]) {
@@ -81,7 +76,9 @@ void main() {
     }
 
     for(uint i = 1u; i < N; ++i) {
-        float site_dist = distance(sites[indices[0]].pos * vec2(aspect_ratio, 1.), sites[indices[i]].pos * vec2(aspect_ratio, 1.));
+        vec2 site0_pos = vec2(texelFetch(site_info, ivec2(indices[0], 0), 0).pq);
+        vec2 site1_pos = vec2(texelFetch(site_info, ivec2(indices[i], 0), 0).pq);
+        float site_dist = distance(site0_pos, site1_pos) / canvas_size.y;
         dists[i] = (dists[i] - dists[0]) * (dists[i] + dists[0]) / (2. * site_dist);
         if(dists[i] < dists[1]) {
             dists[1] = dists[i];
@@ -89,11 +86,13 @@ void main() {
         }
     }
     float dist = dists[1];
+    vec3 site0_color = vec3(texelFetch(site_info, ivec2(indices[0], 1), 0)) / (float(0xffffu));
+    vec3 site1_color = vec3(texelFetch(site_info, ivec2(indices[1], 1), 0)) / (float(0xffffu));
     if(draw_frame) {
         dist = smoothstep(.5 * line_width - aa_width, .5 * line_width + aa_width, dist);
-        frag_color = mix(vec4(line_color, 1.), draw_color ? vec4(sites[indices[0]].color, 1.) : frag_color, dist);
+        frag_color = mix(vec4(line_color, 1.), draw_color ? vec4(site0_color, 1.) : frag_color, dist);
     } else {
         dist = smoothstep(-aa_width, aa_width, dist);
-        frag_color = vec4(mix(sites[indices[1]].color, sites[indices[0]].color, dist), 1.);
+        frag_color = vec4(mix(site1_color, site0_color, dist), 1.);
     }
 }

@@ -10,16 +10,8 @@ out uvec4 new_state;
 uniform vec2 canvas_size;
 uniform uint site_array_size;
 uniform ivec2 step_size;
+uniform usampler2D site_info;
 uniform usampler2D board;
-
-struct Site {
-    vec2 pos;
-    vec3 color;
-};
-
-layout(std140) uniform user_data {
-    Site sites[MAX_ARRAY_SIZE];
-};
 
 // the texture state is interpreted as follows:
 //  r,g store coordinate, b store index and infers empty when it equals 0.
@@ -28,7 +20,8 @@ void main() {
     // 1st pass, fill texture with sites
     if(ivec2(canvas_size) == step_size) {
         for(int i = 0; i < int(site_array_size); ++i) {
-            if(distance(sites[i].pos * canvas_size, gl_FragCoord.xy) < .707107) {
+            vec2 site_pos = vec2(texelFetch(site_info, ivec2(i, 0), 0).pq);
+            if(distance(site_pos, gl_FragCoord.xy) < .707107) {
                 new_state.rg = uvec2(gl_FragCoord.xy);
                 new_state.b = uint(i + 1);
                 return;

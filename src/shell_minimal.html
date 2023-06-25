@@ -175,13 +175,19 @@
 
       const method_selection = document.getElementsByName("method");
 
-      const INIT_SITE_NUM = 32;
       const site_num = document.getElementById("site_number");
       const site_num_output = site_num.nextElementSibling.firstElementChild;
       const draw_site = document.getElementById("draw_site");
       const draw_frame = document.getElementById("draw_frame");
       const line_width = document.getElementById("line_width");
       const line_width_output = line_width.nextElementSibling.firstElementChild;
+
+      const INIT_SITE_NUM = 16;
+      site_num.value = INIT_SITE_NUM;
+      site_num_output.textContent = INIT_SITE_NUM;
+      const INIT_LINE_WIDTH = 1;
+      line_width.value = INIT_LINE_WIDTH;
+      line_width_output.textContent = INIT_LINE_WIDTH;
 
       const download_frame = document.getElementById("download_frame");
       download_frame.addEventListener("click", () => {
@@ -216,19 +222,22 @@
         a.click();
       });
 
+      function alter_state() {
+        _alter_state(
+          method_selection[0].checked, // using brute force method of JFA
+          parseInt(site_num.value), // number of sites
+          draw_site.checked, // whether draw site
+          draw_frame.checked, // whether draw frame
+          parseInt(line_width.value), // frame line width
+          this.id == site_num.id ? performance.now() : 0
+        );
+      }
+
       var Module = {
         preRun: [],
         postRun: [
           () => {
-            _set_method(method_selection[0].checked);
-            site_num.value = INIT_SITE_NUM;
-            site_num_output.textContent = INIT_SITE_NUM;
-            line_width_output.textContent = line_width.value;
-            _draw_some_sites(
-              INIT_SITE_NUM,
-              draw_site.checked,
-              draw_frame.checked
-            );
+            alter_state();
           },
         ],
         print: (function () {
@@ -314,10 +323,9 @@
 
       method_selection.forEach((input) => {
         input.addEventListener("input", (e) => {
-          e.preventDefault();
           if (e.target.checked) {
             const old_method = e.target.value === "brute_force";
-            _set_method(old_method);
+            alter_state();
             [draw_site, draw_frame, line_width, download_frame].forEach((i) => {
               i.disabled = !old_method;
             });
@@ -325,38 +333,14 @@
         });
       });
       site_num.addEventListener("input", (e) => {
-        e.preventDefault();
-        const site_num = parseInt(e.target.value);
-        site_num_output.textContent = site_num;
-        _draw_some_sites(site_num, draw_site.checked, draw_frame.checked);
+        site_num_output.textContent = e.target.value;
+        alter_state.call(e.target);
       });
-      draw_site.addEventListener("input", (e) => {
-        _draw_some_sites(
-          parseInt(site_num.value),
-          draw_site.checked,
-          draw_frame.checked,
-          true
-        );
-      });
-      draw_frame.addEventListener("input", (e) => {
-        _draw_some_sites(
-          parseInt(site_num.value),
-          draw_site.checked,
-          draw_frame.checked,
-          true
-        );
-      });
+      draw_site.addEventListener("input", alter_state);
+      draw_frame.addEventListener("input", alter_state);
       line_width.addEventListener("input", (e) => {
-        e.preventDefault();
-        const lw = parseInt(e.target.value);
-        line_width_output.textContent = lw;
-        _draw_some_sites(
-          site_num.value,
-          draw_site.checked,
-          draw_frame.checked,
-          true,
-          lw
-        );
+        line_width_output.textContent = e.target.value;
+        alter_state.call(e.target);
       });
     </script>
     {{{ SCRIPT }}}
