@@ -21,7 +21,7 @@ void main() {
     if(ivec2(canvas_size) == step_size) {
         for(int i = 0; i < int(site_array_size); ++i) {
             vec2 site_pos = vec2(texelFetch(site_info, ivec2(i, 0), 0).pq);
-            if(distance(site_pos, gl_FragCoord.xy) < .707107) {
+            if(distance(site_pos, gl_FragCoord.xy - vec2(.5)) < .01) {
                 new_state.rg = uvec2(gl_FragCoord.xy);
                 new_state.b = uint(i + 1);
                 return;

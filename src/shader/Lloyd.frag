@@ -35,7 +35,6 @@ void get_patch_coord(in vec2 site_pos, in uint patch_id, out ivec2 bottom_left, 
     top_right = bottom_left + ivec2(quad_size / patches_per_line);
 }
 
-// FIXME: Current implementation will squeeze sites towards origin point
 void main() {
     uint reduction_num = uint(ceil(log2(float(4u * patches_per_quad))));
     int step_size_base = int(ceil(pow(float(site_num), 1. / float(reduction_num))));
