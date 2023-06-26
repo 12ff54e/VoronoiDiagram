@@ -24,7 +24,7 @@ void add_uint_bits_of_float(inout uvec2 s, in uvec2 a) {
 }
 
 // assumes quadrant and patches are square
-void get_patch_coord(in vec2 site_pos, in uint patch_id, out ivec2 bottom_left, out ivec2 top_right) {
+void get_patch_coord(in uvec2 site_pos, in uint patch_id, out ivec2 bottom_left, out ivec2 top_right) {
     uint quad_size = uint(2. * sqrt(canvas_size.x * canvas_size.y / float(site_num)));
     quad_size += (patches_per_line - quad_size % patches_per_line); // make quad_size divisible by patches_per_line
     uint quad_id = patch_id / patches_per_quad;
@@ -50,12 +50,12 @@ void main() {
             // using ivec2 since this coordinate might be negative (out of bound)
             ivec2 bottom_left;
             ivec2 top_right;
-            vec2 site_pos = vec2(texelFetch(site_info, ivec2(site_id, 0), 0).zw);
+            uvec2 site_pos = texelFetch(site_info, ivec2(site_id, 0), 0).pq;
             get_patch_coord(site_pos, patch_id, bottom_left, top_right);
             for(int x = max(bottom_left.x, 0); x < min(top_right.x, int(canvas_size.x)); ++x) {
                 for(int y = max(bottom_left.y, 0); y < min(top_right.y, int(canvas_size.y)); ++y) {
-                    uvec4 texel = texelFetch(board, ivec2(x, y), 0); // z refers to 1-based site id
-                    if(texel.z == site_id + 1u) {
+                    uvec3 texel = texelFetch(board, ivec2(x, y), 0).stp; // z refers to 1-based site id
+                    if(texel.p == site_id + 1u) {
                         pos_acc += vec2(x, y);
                         count += 1u;
                     }

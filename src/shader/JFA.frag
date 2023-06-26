@@ -19,11 +19,11 @@ uniform usampler2D board;
 void main() {
     // 1st pass, fill texture with sites
     if(ivec2(canvas_size) == step_size) {
-        for(int i = 0; i < int(site_array_size); ++i) {
+        for(uint i = 0u; i < site_array_size; ++i) {
             vec2 site_pos = vec2(texelFetch(site_info, ivec2(i, 0), 0).pq);
             if(distance(site_pos, gl_FragCoord.xy - vec2(.5)) < .01) {
                 new_state.rg = uvec2(gl_FragCoord.xy);
-                new_state.b = uint(i + 1);
+                new_state.b = i + 1u;
                 return;
             }
         }

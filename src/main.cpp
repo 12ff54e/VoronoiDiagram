@@ -31,6 +31,7 @@ struct State {
     bool update_uniforms;
     GLuint style;
     GLuint line_width;
+    unsigned frame;
     double timestamp;  // record timestamp of changing sites
     std::pair<std::size_t, std::size_t> update_site_range;
 
@@ -275,6 +276,9 @@ static void lloyd(GLuint board_texture) {
                  static_cast<GLsizei>(4 * patches_per_quad + 1), 0,
                  GL_RGBA_INTEGER, GL_UNSIGNED_INT, nullptr);
 
+    glViewport(0, 0, static_cast<GLsizei>(site_num),
+               static_cast<GLsizei>(4 * patches_per_quad + 1));
+
     auto step_num =
         static_cast<GLuint>(std::ceil(std::log2(4 * patches_per_quad))) + 1;
     for (GLuint step = 0; step < step_num; ++step) {
@@ -297,7 +301,7 @@ static void lloyd(GLuint board_texture) {
         auto pixels = std::make_unique<GLuint[]>(4);
         glReadPixels(0, 0, 1, 1, GL_RGBA_INTEGER, GL_UNSIGNED_INT,
                      pixels.get());
-        std::cout << "avg moving distance: "
+        std::cout << "Average moving distance: "
                   << static_cast<GLfloat>(pixels[0]) / GLfloat{10} << "px\n";
     }
 
@@ -375,9 +379,14 @@ static void draw() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
+    // restore viewport to canvas size
+    glViewport(0, 0, canvas_width, canvas_height);
+
     // Draw the full-screen quad, to let OpenGL invoke fragment shader
     glBindVertexArray(device_object.screen_quad_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    ++state.frame;
 }
 
 extern "C" {
@@ -500,7 +509,6 @@ int main() {
                 auto& state = get_state();
                 state.update_site_range = {0, site_num};
                 state.timestamp = emscripten_performance_now();
-                draw();
                 last_call_time = now;
                 return EM_TRUE;
             }
@@ -514,8 +522,6 @@ int main() {
                 auto& state = get_state();
                 state.update_site_range = {sites.size() - 1, sites.size()};
                 state.timestamp = emscripten_performance_now();
-
-                draw();
                 return EM_TRUE;
             };
         emscripten_set_keydown_callback("body", &t, false, handle_key);
@@ -528,3 +534,8 @@ int main() {
     emscripten_set_main_loop(draw, 0, EM_FALSE);
     return 0;
 }
+
+// TODO: Adjustable relaxation speed
+// TODO: Periodic boundary
+// TODO: Hardware aware texture size
+// TODO: Wrap to other 2D manifold e.g. torus, sphere, etc.
