@@ -242,13 +242,15 @@ static void lloyd(GLuint board_texture) {
     auto& device_object = get_device_object();
     glBindFramebuffer(GL_FRAMEBUFFER, device_object.fbo);
 
-    GLuint patches_per_quad = 9;
-    GLuint site_num = get_sites().size();
+    const GLuint site_num = get_sites().size();
+    GLuint patches_per_line =
+        static_cast<GLuint>(std::ceil(16 / std::sqrt(site_num)));
+    const GLuint patches_per_quad = patches_per_line * patches_per_line;
     auto& shader = shader_programs("Lloyd");
+
     shader.set_uniform_value<GLuint>("site_num", site_num)
-        .set_uniform_value<GLuint>("patches_per_quad", patches_per_quad)
-        .set_uniform_value<GLuint>("patches_per_line", 3);
-    // TODO: Dynamically change patches per quad according to number of sites
+        .set_uniform_value<GLuint>("patches_per_line", patches_per_line)
+        .set_uniform_value<GLuint>("patches_per_quad", patches_per_quad);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
@@ -384,15 +386,15 @@ extern "C" {
  *
  */
 EMSCRIPTEN_KEEPALIVE void alter_state(bool,
+                                      bool,
+                                      bool,
                                       std::size_t,
-                                      bool,
-                                      bool,
                                       GLuint,
                                       double);
 void alter_state(bool brute_force,
-                 std::size_t site_num,
                  bool draw_site,
                  bool draw_frame,
+                 std::size_t site_num,
                  GLuint line_width,
                  double timestamp) {
     auto& state = get_state();

@@ -113,7 +113,7 @@
         </div>
         <div>
           <input type="radio" name="method" value="JFA" /><label for="JFA"
-            >JFA</label
+            >JFA/Lloyd</label
           >
         </div>
       </fieldset>
@@ -225,9 +225,9 @@
       function alter_state() {
         _alter_state(
           method_selection[0].checked, // using brute force method of JFA
-          parseInt(site_num.value), // number of sites
           draw_site.checked, // whether draw site
           draw_frame.checked, // whether draw frame
+          parseInt(site_num.value), // number of sites
           parseInt(line_width.value), // frame line width
           this.id == site_num.id ? performance.now() : 0
         );
@@ -325,7 +325,7 @@
         input.addEventListener("input", (e) => {
           if (e.target.checked) {
             const old_method = e.target.value === "brute_force";
-            alter_state();
+            alter_state.call(e.target);
             [draw_site, draw_frame, line_width, download_frame].forEach((i) => {
               i.disabled = !old_method;
             });

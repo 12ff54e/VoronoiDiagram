@@ -106,7 +106,7 @@ void main() {
             // store previous and new position at 2nd row, as xy and zw component, in uint.
             new_sites.xy = texelFetch(site_info, ivec2(site_id, 0), 0).zw;
             uvec4 a1 = texelFetch(prev_sites, ivec2(site_id, 1), 0);
-            uvec4 a2 = texelFetch(prev_sites, ivec2(site_id, 1 + 1 << (reduction_step - 1u)), 0);
+            uvec4 a2 = texelFetch(prev_sites, ivec2(site_id, 1 + (1 << (reduction_step - 1u))), 0);
             new_sites.zw = uvec2(roundEven((uintBitsToFloat(a1.xy) + uintBitsToFloat(a2.xy)) / float(a1.z + a2.z)));
         } else if(ivec2(gl_FragCoord.xy) == ivec2(0, 0)) {
             // rms of moving distance of each site
