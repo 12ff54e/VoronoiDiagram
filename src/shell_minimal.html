@@ -233,6 +233,19 @@
         );
       }
 
+      function throttle(func, interval) {
+        let ts = performance.now();
+
+        return function () {
+          let now = performance.now();
+          if (now - ts < interval) {
+            return;
+          }
+          func.call(this);
+          ts = now;
+        };
+      }
+
       var Module = {
         preRun: [],
         postRun: [
@@ -332,15 +345,17 @@
           }
         });
       });
-      site_num.addEventListener("input", (e) => {
+
+      const change_site_num = throttle(alter_state, 50);
+      site_num.addEventListener("input", function (e) {
         site_num_output.textContent = e.target.value;
-        alter_state.call(e.target);
+        change_site_num.call(this);
       });
       draw_site.addEventListener("input", alter_state);
       draw_frame.addEventListener("input", alter_state);
-      line_width.addEventListener("input", (e) => {
+      line_width.addEventListener("input", function (e) {
         line_width_output.textContent = e.target.value;
-        alter_state.call(e.target);
+        alter_state();
       });
     </script>
     {{{ SCRIPT }}}
