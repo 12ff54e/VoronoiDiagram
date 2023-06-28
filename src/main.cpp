@@ -33,6 +33,9 @@ struct State {
     GLuint line_width;
     unsigned frame;
     double timestamp;  // record timestamp of changing sites
+    std::pair<std::chrono::high_resolution_clock::time_point,
+              std::chrono::high_resolution_clock::time_point>
+        time_span;
     std::pair<std::size_t, std::size_t> update_site_range;
 
     bool update_sites() const {
@@ -385,6 +388,19 @@ static void draw() {
     glBindVertexArray(device_object.screen_quad_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
+    if (state.frame % 10 == 0) {
+        using namespace std::chrono;
+        state.time_span.first = state.time_span.second;
+        state.time_span.second = high_resolution_clock::now();
+
+        auto fps = 10. / duration<double>{state.time_span.second -
+                                         state.time_span.first}
+                            .count();
+
+        EM_ASM(
+            document.getElementById("fps").textContent = `${$0.toFixed(2)} fps`,
+            fps);
+    }
     ++state.frame;
 }
 
