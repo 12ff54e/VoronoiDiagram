@@ -5,7 +5,7 @@ precision mediump usampler2D;
 #define MAX_ARRAY_SIZE 4096
 
 uniform vec2 canvas_size;
-uniform uint site_array_size;
+uniform uint site_num;
 uniform uint style;
 uniform float line_width;
 uniform vec3 line_color;
@@ -23,23 +23,27 @@ void render_smooth(float dist, float elem_size, vec3 color) {
     }
 }
 
-void main() {
-    float aspect_ratio = canvas_size.x / canvas_size.y;
-    vec2 uv = gl_FragCoord.xy / canvas_size * vec2(aspect_ratio, 1.);
-    // uv is normalized coordinate with y from 0. to 1. and x from 0. to a, 
-    // starting from lower-left corner, where a is aspect ratio.
-    // (Note: this behaviour depends on the qualifier `origin_upper_left` and `pixel_center_integer` of gl_FragCoord, 
-    // but both are absent in OpenGL ES Shading Language spec)
+void dist_periodic(in vec2 p1, in vec2 p2, in bool periodic_x, in bool periodic_y, out float d) {
+    d = max(canvas_size.x, canvas_size.y);
+    for(int i = -int(periodic_x); i <= int(periodic_x); ++i) {
+        for(int j = -int(periodic_y); j <= int(periodic_y); ++j) {
+            d = min(d, distance(p1, p2 + canvas_size * vec2(i, j)));
+        }
+    }
+}
 
-    bool draw_site = bool(style & 1u);
-    bool draw_frame = bool(style & 2u);
-    bool draw_color = bool(style & 4u);
+void main() {
+    bool draw_site = bool(style & (1u << 0u));
+    bool draw_frame = bool(style & (1u << 1u));
+    bool draw_color = bool(style & (1u << 2u));
+    bool periodic_x = bool(style & (1u << 3u));
+    bool periodic_y = bool(style & (1u << 4u));
 
     vec3 background_color = color;
     frag_color = vec4(background_color, 0.);
 
     float aa_width = 1. / canvas_size.y;
-    float point_size = 0.02f / sqrt(float(site_array_size));
+    float point_size = 0.01f / sqrt(sqrt(float(site_num)));
 
     // find N nearest sites
     const uint N = 4u;
@@ -50,10 +54,12 @@ void main() {
         dists[i] = 1.;
     }
     // iterate over sites
-    for(uint i = 0u; i < site_array_size; ++i) {
+    for(uint i = 0u; i < site_num; ++i) {
         vec2 site_pos = vec2(texelFetch(site_info, ivec2(i, 0), 0).pq);
         vec3 site_color = vec3(texelFetch(site_info, ivec2(i, 1), 0)) / float(0xffffu);
-        float dist = distance(gl_FragCoord.xy, site_pos) / canvas_size.y;
+        float dist;
+        dist_periodic(gl_FragCoord.xy, site_pos, periodic_x, periodic_y, dist);
+        dist /= canvas_size.y;
         if(dist < point_size + aa_width && draw_site) {
             frag_color = vec4(site_color, 1.); // set current block color
             render_smooth(dist, point_size, vec3(0.));
@@ -78,7 +84,9 @@ void main() {
     for(uint i = 1u; i < N; ++i) {
         vec2 site0_pos = vec2(texelFetch(site_info, ivec2(indices[0], 0), 0).pq);
         vec2 site1_pos = vec2(texelFetch(site_info, ivec2(indices[i], 0), 0).pq);
-        float site_dist = distance(site0_pos, site1_pos) / canvas_size.y;
+        float site_dist;
+        dist_periodic(site0_pos, site1_pos, periodic_x, periodic_y, site_dist);
+        site_dist /= canvas_size.y;
         dists[i] = (dists[i] - dists[0]) * (dists[i] + dists[0]) / (2. * site_dist);
         if(dists[i] < dists[1]) {
             dists[1] = dists[i];

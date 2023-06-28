@@ -206,7 +206,8 @@ static GLuint voronoi_tesselation() {
 
     auto& shader = shader_programs("JFA");
     shader.use();
-    shader.set_uniform_value<GLuint>("site_array_size", get_sites().size());
+    shader.set_uniform_value<GLuint>("site_num", get_sites().size())
+        .set_uniform_value<GLuint>("style", get_state().style);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
@@ -354,22 +355,21 @@ static void draw() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         shader_programs("brute_force_shader")
-            .set_uniform_value<GLuint>("site_array_size", current_sites.size());
-        if (state.update_uniforms) {
-            shader_programs("brute_force_shader")
-                .set_uniform_value<GLuint>("style", state.style)
-                .set_uniform_value<GLfloat>(
-                    "line_width", static_cast<float>(state.line_width) /
-                                      static_cast<float>(canvas_height))
-                .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
-            state.update_uniforms = false;
-        }
-    } else {
+            .set_uniform_value<GLuint>("site_num", current_sites.size())
+            .set_uniform_value<GLuint>("style", state.style)
+            .set_uniform_value<GLfloat>("line_width",
+                                        static_cast<float>(state.line_width) /
+                                            static_cast<float>(canvas_height))
+            .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
+    }
+
+    else {
         auto board = voronoi_tesselation();
         lloyd(board);
 
         shader_programs("draw_texture")
-            .set_uniform_value<GLuint>("site_array_size", current_sites.size());
+            .set_uniform_value<GLuint>("site_num", current_sites.size())
+            .set_uniform_value<GLuint>("style", state.style);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
@@ -394,21 +394,20 @@ extern "C" {
  * @brief Expose to web for changing state of the drawing
  *
  */
-EMSCRIPTEN_KEEPALIVE void alter_state(bool,
-                                      bool,
-                                      bool,
-                                      std::size_t,
-                                      GLuint,
-                                      double);
+EMSCRIPTEN_KEEPALIVE void
+alter_state(bool, bool, bool, bool, bool, std::size_t, GLuint, double);
 void alter_state(bool brute_force,
                  bool draw_site,
                  bool draw_frame,
+                 bool periodic_x,
+                 bool periodic_y,
                  std::size_t site_num,
                  GLuint line_width,
                  double timestamp) {
     auto& state = get_state();
     GLuint style = unsigned(draw_site) + (unsigned(draw_frame) << 1) +
-                   (draw_frame ? 0u : 4u);
+                   (draw_frame ? 0u : 4u) + (unsigned(periodic_x) << 3) +
+                   (unsigned(periodic_y) << 4);
     if (state.style != style || state.line_width != line_width) {
         state.update_uniforms = true;
         state.style = style;
@@ -536,6 +535,5 @@ int main() {
 }
 
 // TODO: Adjustable relaxation speed
-// TODO: Periodic boundary
 // TODO: Hardware aware texture size
 // TODO: Wrap to other 2D manifold e.g. torus, sphere, etc.

@@ -52,14 +52,14 @@ void main() {
             ivec2 top_right;
             uvec2 site_pos = texelFetch(site_info, ivec2(site_id, 0), 0).pq;
             get_patch_coord(site_pos, patch_id, bottom_left, top_right);
-            for(int x = max(bottom_left.x, 0); x < min(top_right.x, int(canvas_size.x)); ++x) {
-                for(int y = max(bottom_left.y, 0); y < min(top_right.y, int(canvas_size.y)); ++y) {
-                    uvec3 texel = texelFetch(board, ivec2(x, y), 0).stp; // z refers to 1-based site id
+            for(int x = bottom_left.x; x < top_right.x; ++x) {
+                for(int y = bottom_left.y; y < top_right.y; ++y) {
+                    ivec2 coord = (ivec2(x, y) + ivec2(canvas_size)) % ivec2(canvas_size);
+                    uvec3 texel = texelFetch(board, coord, 0).stp; // z refers to 1-based site id
                     if(texel.p == site_id + 1u) {
                         pos_acc += vec2(x, y);
                         count += 1u;
                     }
-
                 }
             }
 
@@ -107,7 +107,8 @@ void main() {
             new_sites.xy = texelFetch(site_info, ivec2(site_id, 0), 0).zw;
             uvec4 a1 = texelFetch(prev_sites, ivec2(site_id, 1), 0);
             uvec4 a2 = texelFetch(prev_sites, ivec2(site_id, 1 + (1 << (reduction_step - 1u))), 0);
-            new_sites.zw = uvec2(roundEven((uintBitsToFloat(a1.xy) + uintBitsToFloat(a2.xy)) / float(a1.z + a2.z)));
+            ivec2 coord = ivec2(roundEven((uintBitsToFloat(a1.xy) + uintBitsToFloat(a2.xy)) / float(a1.z + a2.z)));
+            new_sites.zw = uvec2((coord + ivec2(canvas_size)) % ivec2(canvas_size));
         } else if(ivec2(gl_FragCoord.xy) == ivec2(0, 0)) {
             // rms of moving distance of each site
             int step_size_base = int(ceil(log(float(site_num)) / log(2. * float(patches_per_quad))));

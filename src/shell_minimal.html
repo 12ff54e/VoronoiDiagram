@@ -155,6 +155,14 @@
           >Line width: <output id="line_width_value"></output>px</label
         >
       </div>
+      <div>
+        <input type="checkbox" id="periodic-x" name="periodic-x" />
+        <label for="periodic-x">Periodic in X?</label>
+      </div>
+      <div>
+        <input type="checkbox" id="periodic-y" name="periodic-y" />
+        <label for="periodic-y">Periodic in Y?</label>
+      </div>
     </div>
     <div class="emscripten_border">
       <canvas
@@ -181,6 +189,8 @@
       const draw_frame = document.getElementById("draw_frame");
       const line_width = document.getElementById("line_width");
       const line_width_output = line_width.nextElementSibling.firstElementChild;
+      const periodic_x = document.getElementById("periodic-x");
+      const periodic_y = document.getElementById("periodic-y");
 
       const INIT_SITE_NUM = 16;
       site_num.value = INIT_SITE_NUM;
@@ -227,6 +237,8 @@
           method_selection[0].checked, // using brute force method of JFA
           draw_site.checked, // whether draw site
           draw_frame.checked, // whether draw frame
+          periodic_x.checked, // periodicity in x direction 
+          periodic_y.checked, // periodicity in y direction 
           parseInt(site_num.value), // number of sites
           parseInt(line_width.value), // frame line width
           this.id == site_num.id ? performance.now() : 0
@@ -339,24 +351,27 @@
           if (e.target.checked) {
             const old_method = e.target.value === "brute_force";
             alter_state.call(e.target);
-            [draw_site, draw_frame, line_width, download_frame].forEach((i) => {
+            [draw_frame, line_width, download_frame].forEach((i) => {
               i.disabled = !old_method;
             });
           }
         });
       });
 
-      const change_site_num = throttle(alter_state, 50);
+      // const change_site_num = throttle(alter_state, 50);
       site_num.addEventListener("input", function (e) {
         site_num_output.textContent = e.target.value;
-        change_site_num.call(this);
+        // change_site_num.call(this);
+        alter_state.call(this);
       });
       draw_site.addEventListener("input", alter_state);
       draw_frame.addEventListener("input", alter_state);
       line_width.addEventListener("input", function (e) {
         line_width_output.textContent = e.target.value;
-        alter_state();
+        alter_state.call(this);
       });
+      periodic_x.addEventListener("input", alter_state);
+      periodic_y.addEventListener("input", alter_state);
     </script>
     {{{ SCRIPT }}}
   </body>
