@@ -85,6 +85,11 @@
       #style-control > fieldset > div {
         display: inline;
       }
+
+      #style-control > div > input,
+      #style-control > div > input + label {
+        vertical-align: middle;
+      }
     </style>
   </head>
   <body>
@@ -237,8 +242,8 @@
           method_selection[0].checked, // using brute force method of JFA
           draw_site.checked, // whether draw site
           draw_frame.checked, // whether draw frame
-          periodic_x.checked, // periodicity in x direction 
-          periodic_y.checked, // periodicity in y direction 
+          periodic_x.checked, // periodicity in x direction
+          periodic_y.checked, // periodicity in y direction
           parseInt(site_num.value), // number of sites
           parseInt(line_width.value), // frame line width
           this.id == site_num.id ? performance.now() : 0
