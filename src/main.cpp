@@ -160,6 +160,22 @@ static auto& initial_device_objects() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
                  GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
 
+    // ping-pong texture for Lloyd
+    glGenTextures(2, device_object.lloyd_texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[0]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI,
+                 static_cast<GLsizei>(MAX_ARRAY_SIZE), 65, 0, GL_RGBA_INTEGER,
+                 GL_UNSIGNED_INT, nullptr);
+    glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[1]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI,
+                 static_cast<GLsizei>(MAX_ARRAY_SIZE), 65, 0, GL_RGBA_INTEGER,
+                 GL_UNSIGNED_INT, nullptr);
+
     // frame buffer
     glGenFramebuffers(1, &device_object.fbo);
 
@@ -259,23 +275,6 @@ static void lloyd(GLuint board_texture) {
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, board_texture);
-
-    // ping-pong texture for Lloyd
-    glDeleteTextures(2, device_object.lloyd_texture);
-    glGenTextures(2, device_object.lloyd_texture);
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, static_cast<GLsizei>(site_num),
-                 static_cast<GLsizei>(4 * patches_per_quad + 1), 0,
-                 GL_RGBA_INTEGER, GL_UNSIGNED_INT, nullptr);
-    glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI, static_cast<GLsizei>(site_num),
-                 static_cast<GLsizei>(4 * patches_per_quad + 1), 0,
-                 GL_RGBA_INTEGER, GL_UNSIGNED_INT, nullptr);
 
     glViewport(0, 0, static_cast<GLsizei>(site_num),
                static_cast<GLsizei>(4 * patches_per_quad + 1));
