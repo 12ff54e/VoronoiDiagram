@@ -395,6 +395,7 @@
       periodic_x.addEventListener("input", alter_state);
       periodic_y.addEventListener("input", alter_state);
       FSAA.addEventListener("change", function (e) {
+        method_selection[0].disabled = e.target.value != '1';
         alter_state.call(this);
       })
     </script>
