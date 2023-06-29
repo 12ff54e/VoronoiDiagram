@@ -11,6 +11,7 @@ uniform uint site_num;
 uniform uint patches_per_quad;
 uniform uint patches_per_line;
 uniform uint reduction_step;
+uniform uint FSAA_factor;
 uniform usampler2D site_info;
 uniform usampler2D board;
 uniform usampler2D prev_sites; // First row stores intermediate result for convergence test
@@ -25,7 +26,7 @@ void add_uint_bits_of_float(inout uvec2 s, in uvec2 a) {
 
 // assumes quadrant and patches are square
 void get_patch_coord(in uvec2 site_pos, in uint patch_id, out ivec2 bottom_left, out ivec2 top_right) {
-    uint quad_size = uint(2. * sqrt(canvas_size.x * canvas_size.y / float(site_num)));
+    uint quad_size = FSAA_factor * uint(2. * sqrt(canvas_size.x * canvas_size.y / float(site_num)));
     quad_size += (patches_per_line - quad_size % patches_per_line); // make quad_size divisible by patches_per_line
     uint quad_id = patch_id / patches_per_quad;
     bottom_left.y = int((patch_id % patches_per_quad) / patches_per_line);
@@ -40,6 +41,8 @@ void main() {
     int step_size_base = int(ceil(pow(float(site_num), 1. / float(reduction_num))));
     uint site_id = uint(gl_FragCoord.x);
 
+    ivec2 FSAA_canvas_size = ivec2(canvas_size) * int(FSAA_factor);
+
     if(reduction_step == 0u) {
         if(gl_FragCoord.y >= 1.) {
             uint patch_id = uint(gl_FragCoord.y) - 1u;
@@ -50,11 +53,11 @@ void main() {
             // using ivec2 since this coordinate might be negative (out of bound)
             ivec2 bottom_left;
             ivec2 top_right;
-            uvec2 site_pos = texelFetch(site_info, ivec2(site_id, 0), 0).pq;
+            uvec2 site_pos = FSAA_factor * texelFetch(site_info, ivec2(site_id, 0), 0).pq;
             get_patch_coord(site_pos, patch_id, bottom_left, top_right);
             for(int x = bottom_left.x; x < top_right.x; ++x) {
                 for(int y = bottom_left.y; y < top_right.y; ++y) {
-                    ivec2 coord = (ivec2(x, y) + ivec2(canvas_size)) % ivec2(canvas_size);
+                    ivec2 coord = (ivec2(x, y) + FSAA_canvas_size) % FSAA_canvas_size;
                     uvec3 texel = texelFetch(board, coord, 0).stp; // z refers to 1-based site id
                     if(texel.p == site_id + 1u) {
                         pos_acc += vec2(x, y);
@@ -67,7 +70,7 @@ void main() {
             new_sites.z = count;
         } else {
             // use the 1st row to store intermediate result for convergence test
-            uvec4 texel = texelFetch(site_info, ivec2(site_id, 0), 0);
+            uvec4 texel = FSAA_factor * texelFetch(site_info, ivec2(site_id, 0), 0);
             vec2 prev_pos = vec2(texel.xy);
             vec2 current_pos = vec2(texel.zw);
             new_sites.x = floatBitsToUint(pow(distance(prev_pos, current_pos), 2.));
@@ -107,7 +110,7 @@ void main() {
             new_sites.xy = texelFetch(site_info, ivec2(site_id, 0), 0).zw;
             uvec4 a1 = texelFetch(prev_sites, ivec2(site_id, 1), 0);
             uvec4 a2 = texelFetch(prev_sites, ivec2(site_id, 1 + (1 << (reduction_step - 1u))), 0);
-            ivec2 coord = ivec2(roundEven((uintBitsToFloat(a1.xy) + uintBitsToFloat(a2.xy)) / float(a1.z + a2.z)));
+            ivec2 coord = ivec2(roundEven((uintBitsToFloat(a1.xy) + uintBitsToFloat(a2.xy)) / float((a1.z + a2.z) * FSAA_factor)));
             new_sites.zw = uvec2((coord + ivec2(canvas_size)) % ivec2(canvas_size));
         } else if(ivec2(gl_FragCoord.xy) == ivec2(0, 0)) {
             // rms of moving distance of each site

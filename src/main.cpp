@@ -28,10 +28,10 @@ struct DeviceObjects {
 
 struct State {
     bool brute_force;
-    bool update_uniforms;
     GLuint style;
     GLuint line_width;
     unsigned frame;
+    unsigned FSAA_factor;
     double timestamp;  // record timestamp of changing sites
     std::pair<std::chrono::high_resolution_clock::time_point,
               std::chrono::high_resolution_clock::time_point>
@@ -155,13 +155,15 @@ static auto& initial_device_objects() {
     glBindTexture(GL_TEXTURE_2D, device_object.tessellation_textures[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
-                 GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, 4 * canvas_width,
+                 4 * canvas_height, 0, GL_RGBA_INTEGER, GL_UNSIGNED_SHORT,
+                 nullptr);
     glBindTexture(GL_TEXTURE_2D, device_object.tessellation_textures[1]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, canvas_width, canvas_height, 0,
-                 GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, 4 * canvas_width,
+                 4 * canvas_height, 0, GL_RGBA_INTEGER, GL_UNSIGNED_SHORT,
+                 nullptr);
 
     // ping-pong texture for Lloyd
     glGenTextures(2, device_object.lloyd_texture);
@@ -223,20 +225,27 @@ static GLuint voronoi_tesselation() {
     auto& device_object = get_device_object();
     glBindFramebuffer(GL_FRAMEBUFFER, device_object.fbo);
 
+    auto& state = get_state();
+    int width = static_cast<int>(state.FSAA_factor) * canvas_width;
+    int height = static_cast<int>(state.FSAA_factor) * canvas_height;
+
     auto& shader = shader_programs("JFA");
     shader.use();
     shader.set_uniform_value<GLuint>("site_num", get_sites().size())
-        .set_uniform_value<GLuint>("style", get_state().style);
+        .set_uniform_value<GLuint>("style", state.style)
+        .set_uniform_value<GLuint>("FSAA_factor", state.FSAA_factor);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
 
+    glViewport(0, 0, width, height);
+
     // the extra step is for initialize texture with sites
-    auto step_num = static_cast<std::size_t>(std::ceil(
-                        std::log2(std::max(canvas_width, canvas_height)))) +
+    auto step_num = static_cast<std::size_t>(
+                        std::ceil(std::log2(std::max(width, height)))) +
                     1;
 
-    Vec<2, GLint> step_size{canvas_width, canvas_height};
+    Vec<2, GLint> step_size{width, height};
     for (std::size_t i = 0; i < step_num; ++i) {
         shader.set_uniform_value<GLint>("step_size", step_size.x(),
                                         step_size.y());
@@ -267,11 +276,14 @@ static void lloyd(GLuint board_texture) {
     GLuint patches_per_line =
         static_cast<GLuint>(std::ceil(16 / std::sqrt(site_num)));
     const GLuint patches_per_quad = patches_per_line * patches_per_line;
-    auto& shader = shader_programs("Lloyd");
 
+    auto& state = get_state();
+
+    auto& shader = shader_programs("Lloyd");
     shader.set_uniform_value<GLuint>("site_num", site_num)
         .set_uniform_value<GLuint>("patches_per_line", patches_per_line)
-        .set_uniform_value<GLuint>("patches_per_quad", patches_per_quad);
+        .set_uniform_value<GLuint>("patches_per_quad", patches_per_quad)
+        .set_uniform_value<GLuint>("FSAA_factor", state.FSAA_factor);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
@@ -363,15 +375,14 @@ static void draw() {
                                         static_cast<float>(state.line_width) /
                                             static_cast<float>(canvas_height))
             .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
-    }
-
-    else {
+    } else {
         auto board = voronoi_tesselation();
         lloyd(board);
 
         shader_programs("draw_texture")
             .set_uniform_value<GLuint>("site_num", current_sites.size())
-            .set_uniform_value<GLuint>("style", state.style);
+            .set_uniform_value<GLuint>("style", state.style)
+            .set_uniform_value<GLuint>("FSAA_factor", state.FSAA_factor);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
@@ -394,8 +405,8 @@ static void draw() {
         state.time_span.second = high_resolution_clock::now();
 
         auto fps = 10. / duration<double>{state.time_span.second -
-                                         state.time_span.first}
-                            .count();
+                                          state.time_span.first}
+                             .count();
 
         EM_ASM(
             document.getElementById("fps").textContent = `${$0.toFixed(2)} fps`,
@@ -410,12 +421,13 @@ extern "C" {
  *
  */
 EMSCRIPTEN_KEEPALIVE void
-alter_state(bool, bool, bool, bool, bool, std::size_t, GLuint, double);
+alter_state(bool, bool, bool, bool, bool, unsigned, std::size_t, GLuint, double);
 void alter_state(bool brute_force,
                  bool draw_site,
                  bool draw_frame,
                  bool periodic_x,
                  bool periodic_y,
+                 unsigned FSAA,
                  std::size_t site_num,
                  GLuint line_width,
                  double timestamp) {
@@ -424,7 +436,6 @@ void alter_state(bool brute_force,
                    (draw_frame ? 0u : 4u) + (unsigned(periodic_x) << 3) +
                    (unsigned(periodic_y) << 4);
     if (state.style != style || state.line_width != line_width) {
-        state.update_uniforms = true;
         state.style = style;
         state.line_width = line_width;
     }
@@ -435,6 +446,7 @@ void alter_state(bool brute_force,
         state.timestamp = timestamp;
     }
     state.brute_force = brute_force;
+    state.FSAA_factor = FSAA;
 }
 }
 

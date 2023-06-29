@@ -10,6 +10,7 @@ out vec4 frag_color;
 uniform vec2 canvas_size;
 uniform uint site_num;
 uniform uint style;
+uniform uint FSAA_factor;
 uniform usampler2D site_info;
 uniform usampler2D board;
 
@@ -25,12 +26,21 @@ void render_smooth(float dist, float elem_size, vec3 color) {
 void main() {
     bool draw_site = bool(style & (1u << 0u));
 
-    uvec3 texel = texelFetch(board, ivec2(gl_FragCoord), 0).stp;
-    uvec3 color = texelFetch(site_info, ivec2(texel.p - 1u, 1), 0).stp;
-    frag_color = vec4(vec3(color) / float(0xffffu), 1.);
+    vec3 color = vec3(0);
+    for(int i = 0; i < int(FSAA_factor); ++i) {
+        for(int j = 0; j < int(FSAA_factor); ++j) {
 
-    float point_size = canvas_size.y * 0.01f / sqrt(sqrt(float(site_num)));
-    if(draw_site) {
-        render_smooth(distance(gl_FragCoord.xy, vec2(texel.st)), point_size, vec3(0, 0, 0));
+            uvec3 texel = texelFetch(board, ivec2(gl_FragCoord) * int(FSAA_factor) + ivec2(i, j), 0).stp;
+            vec3 sub_color = vec3(texelFetch(site_info, ivec2(texel.p - 1u, 1), 0)) / float(0xffff);
+            color += sub_color;
+        }
     }
+
+    color /= float(FSAA_factor * FSAA_factor);
+    frag_color = vec4(color, 1.);
+
+    // float point_size = canvas_size.y * 0.01f / sqrt(sqrt(float(site_num)));
+    // if(draw_site) {
+    //     render_smooth(distance(gl_FragCoord.xy, vec2(texel.st)), point_size, vec3(0, 0, 0));
+    // }
 }

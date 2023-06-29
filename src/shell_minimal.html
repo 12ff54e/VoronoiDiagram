@@ -172,6 +172,15 @@
         <input type="checkbox" id="periodic-y" name="periodic-y" />
         <label for="periodic-y">Periodic in Y?</label>
       </div>
+      <div>
+        <select name="FSAA" id="FSAA" disabled>
+          <option value="1">No</option>
+          <option value="2">2x</option>
+          <option value="3">3x</option>
+          <option value="4">4x</option>
+        </select>
+        <label for="FSAA">FSAA</label>
+      </div>
       <div id="fps"></div>
     </div>
     <div class="emscripten_border">
@@ -201,6 +210,7 @@
       const line_width_output = line_width.nextElementSibling.firstElementChild;
       const periodic_x = document.getElementById("periodic-x");
       const periodic_y = document.getElementById("periodic-y");
+      const FSAA = document.getElementById("FSAA");
 
       const INIT_SITE_NUM = 16;
       site_num.value = INIT_SITE_NUM;
@@ -249,6 +259,7 @@
           draw_frame.checked, // whether draw frame
           periodic_x.checked, // periodicity in x direction
           periodic_y.checked, // periodicity in y direction
+          parseInt(FSAA.value), // FSAA factor
           parseInt(site_num.value), // number of sites
           parseInt(line_width.value), // frame line width
           this.id == site_num.id ? performance.now() : 0
@@ -364,6 +375,7 @@
             [draw_frame, line_width, download_frame].forEach((i) => {
               i.disabled = !old_method;
             });
+            FSAA.disabled = old_method;
           }
         });
       });
@@ -382,6 +394,9 @@
       });
       periodic_x.addEventListener("input", alter_state);
       periodic_y.addEventListener("input", alter_state);
+      FSAA.addEventListener("change", function (e) {
+        alter_state.call(this);
+      })
     </script>
     {{{ SCRIPT }}}
   </body>
