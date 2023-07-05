@@ -15,11 +15,29 @@ uniform ivec2 step_size;
 uniform usampler2D site_info;
 uniform usampler2D board;
 
-void dist_periodic(in vec2 p1, in vec2 p2, in bool periodic_x, in bool periodic_y, out float d) {
-    d = float(FSAA_factor) * max(canvas_size.x, canvas_size.y);
+void dist_periodic(in vec2 p1, in vec2 p2, in bool periodic_x, in bool periodic_y, out float dist) {
+    uint metric = (style >> 5u) & 3u;
+    dist = max(canvas_size.x, canvas_size.y);
     for(int i = -int(periodic_x); i <= int(periodic_x); ++i) {
         for(int j = -int(periodic_y); j <= int(periodic_y); ++j) {
-            d = min(d, distance(p1, p2 + float(FSAA_factor) * canvas_size * vec2(i, j)));
+            float d;
+            switch(metric) {
+                case 0u: // Manhattan
+                    d = dot(abs(p1 - (p2 + canvas_size * vec2(i, j))), vec2(1));
+                    break;
+                case 1u: // Euclidean
+                    d = distance(p1, p2 + canvas_size * vec2(i, j));
+                    break;
+                case 2u: // Min
+                    p1 = abs(p1 - (p2 + canvas_size * vec2(i, j)));
+                    d = min(p1.x, p1.y);
+                    break;
+                case 3u: // Max
+                    p1 = abs(p1 - (p2 + canvas_size * vec2(i, j)));
+                    d = max(p1.x, p1.y);
+                    break;
+            }
+            dist = min(dist, d);
         }
     }
 }

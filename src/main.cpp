@@ -16,12 +16,6 @@ constexpr int canvas_width = 1920;
 constexpr int canvas_height = 1080;
 constexpr unsigned MAX_ARRAY_SIZE = 4096;
 
-enum class Metric {
-    Manhattan,
-    Euclidean,
-    Inverse,
-};
-
 struct DeviceObjects {
     GLuint screen_quad_vao;
     GLuint ubo;
@@ -33,7 +27,6 @@ struct DeviceObjects {
 
 struct State {
     bool brute_force;
-    Metric metric;
     GLuint style;
     GLuint line_width;
     unsigned frame;
@@ -420,6 +413,7 @@ EMSCRIPTEN_KEEPALIVE void alter_state(bool,
                                       bool,
                                       bool,
                                       unsigned,
+                                      unsigned,
                                       std::size_t,
                                       GLuint,
                                       double);
@@ -429,13 +423,14 @@ void alter_state(bool brute_force,
                  bool periodic_x,
                  bool periodic_y,
                  unsigned FSAA,
+                 unsigned metric,
                  std::size_t site_num,
                  GLuint line_width,
                  double timestamp) {
     auto& state = get_state();
     GLuint style = unsigned(draw_site) + (unsigned(draw_frame) << 1) +
                    (draw_frame ? 0u : 4u) + (unsigned(periodic_x) << 3) +
-                   (unsigned(periodic_y) << 4);
+                   (unsigned(periodic_y) << 4) + (metric << 5);
     if (state.style != style || state.line_width != line_width) {
         state.style = style;
         state.line_width = line_width;

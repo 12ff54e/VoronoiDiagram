@@ -181,6 +181,15 @@
         </select>
         <label for="FSAA">FSAA</label>
       </div>
+      <div>
+        <select name="Metric" id="Metric">
+          <option value="0">Manhattan</option>
+          <option value="1" selected>Euclidean</option>
+          <option value="2">Min</option>
+          <option value="3">Max</option>
+        </select>
+        <label for="Metric">Metric</label>
+      </div>
       <div id="fps"></div>
     </div>
     <div class="emscripten_border">
@@ -211,6 +220,7 @@
       const periodic_x = document.getElementById("periodic-x");
       const periodic_y = document.getElementById("periodic-y");
       const FSAA = document.getElementById("FSAA");
+      const Metric = document.getElementById("Metric");
 
       const INIT_SITE_NUM = 16;
       site_num.value = INIT_SITE_NUM;
@@ -260,6 +270,7 @@
           periodic_x.checked, // periodicity in x direction
           periodic_y.checked, // periodicity in y direction
           parseInt(FSAA.value), // FSAA factor
+          parseInt(Metric.value), // metric function
           parseInt(site_num.value), // number of sites
           parseInt(line_width.value), // frame line width
           this.id == site_num.id ? performance.now() : 0
@@ -395,9 +406,10 @@
       periodic_x.addEventListener("input", alter_state);
       periodic_y.addEventListener("input", alter_state);
       FSAA.addEventListener("change", function (e) {
-        method_selection[0].disabled = e.target.value != '1';
+        method_selection[0].disabled = e.target.value != "1";
         alter_state.call(this);
-      })
+      });
+      Metric.addEventListener("change", alter_state);
     </script>
     {{{ SCRIPT }}}
   </body>
