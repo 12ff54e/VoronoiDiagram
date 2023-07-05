@@ -1,7 +1,6 @@
 #include <emscripten/html5.h>  // for H5 event handling
 #include <webgl/webgl2.h>      // for all the gl* staff
 #include <chrono>      // std::high_resolution_clock, std::chrono::duration
-#include <fstream>     // std::ifstream
 #include <functional>  // std::bind
 #include <iostream>    // std::cout
 #include <memory>      // std::unique_ptr
@@ -17,6 +16,12 @@ constexpr int canvas_width = 1920;
 constexpr int canvas_height = 1080;
 constexpr unsigned MAX_ARRAY_SIZE = 4096;
 
+enum class Metric {
+    Manhattan,
+    Euclidean,
+    Inverse,
+};
+
 struct DeviceObjects {
     GLuint screen_quad_vao;
     GLuint ubo;
@@ -28,20 +33,30 @@ struct DeviceObjects {
 
 struct State {
     bool brute_force;
+    Metric metric;
     GLuint style;
     GLuint line_width;
     unsigned frame;
     unsigned FSAA_factor;
     double timestamp;  // record timestamp of changing sites
-    std::pair<std::chrono::high_resolution_clock::time_point,
-              std::chrono::high_resolution_clock::time_point>
-        time_span;
     std::pair<std::size_t, std::size_t> update_site_range;
+    std::array<std::chrono::high_resolution_clock::time_point, 10> time_points;
 
     bool update_sites() const {
         return update_site_range.second > update_site_range.first;
     }
     void reset_update_site_range() { update_site_range = {0, 0}; }
+
+    double fps() {
+        static std::size_t idx{};
+        const auto len = time_points.size();
+        const auto now = std::chrono::high_resolution_clock::now();
+        auto then = std::exchange(time_points[idx], now);
+        idx = (idx + 1) % len;
+
+        return static_cast<double>(len + 1) /
+               std::chrono::duration<double>(now - then).count();
+    }
 };
 
 struct Site {
@@ -143,8 +158,6 @@ static auto& initial_device_objects() {
     glGenTextures(1, &device_object.sites_texture);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI,
                  static_cast<GLsizei>(MAX_ARRAY_SIZE), 2, 0, GL_RGBA_INTEGER,
                  GL_UNSIGNED_INT, nullptr);
@@ -153,14 +166,10 @@ static auto& initial_device_objects() {
     glGenTextures(2, device_object.tessellation_textures);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.tessellation_textures[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, 4 * canvas_width,
                  4 * canvas_height, 0, GL_RGBA_INTEGER, GL_UNSIGNED_SHORT,
                  nullptr);
     glBindTexture(GL_TEXTURE_2D, device_object.tessellation_textures[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, 4 * canvas_width,
                  4 * canvas_height, 0, GL_RGBA_INTEGER, GL_UNSIGNED_SHORT,
                  nullptr);
@@ -169,14 +178,10 @@ static auto& initial_device_objects() {
     glGenTextures(2, device_object.lloyd_texture);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI,
                  static_cast<GLsizei>(MAX_ARRAY_SIZE), 65, 0, GL_RGBA_INTEGER,
                  GL_UNSIGNED_INT, nullptr);
     glBindTexture(GL_TEXTURE_2D, device_object.lloyd_texture[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32UI,
                  static_cast<GLsizei>(MAX_ARRAY_SIZE), 65, 0, GL_RGBA_INTEGER,
                  GL_UNSIGNED_INT, nullptr);
@@ -399,19 +404,8 @@ static void draw() {
     glBindVertexArray(device_object.screen_quad_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-    if (state.frame % 10 == 0) {
-        using namespace std::chrono;
-        state.time_span.first = state.time_span.second;
-        state.time_span.second = high_resolution_clock::now();
-
-        auto fps = 10. / duration<double>{state.time_span.second -
-                                          state.time_span.first}
-                             .count();
-
-        EM_ASM(
-            document.getElementById("fps").textContent = `${$0.toFixed(2)} fps`,
-            fps);
-    }
+    EM_ASM(document.getElementById("fps").textContent = `${$0.toFixed(2)} fps`,
+           state.fps());
     ++state.frame;
 }
 
@@ -420,8 +414,15 @@ extern "C" {
  * @brief Expose to web for changing state of the drawing
  *
  */
-EMSCRIPTEN_KEEPALIVE void
-alter_state(bool, bool, bool, bool, bool, unsigned, std::size_t, GLuint, double);
+EMSCRIPTEN_KEEPALIVE void alter_state(bool,
+                                      bool,
+                                      bool,
+                                      bool,
+                                      bool,
+                                      unsigned,
+                                      std::size_t,
+                                      GLuint,
+                                      double);
 void alter_state(bool brute_force,
                  bool draw_site,
                  bool draw_frame,
@@ -473,44 +474,45 @@ int main() {
 
     // Create shader program
     {
-        auto read_shader_source = [](const std::string& path) {
-            std::fstream fs(path);
-            if (!fs.is_open()) {
-                std::cout << "Can not open shader source file: " << path
-                          << '\n';
-                throw std::runtime_error("Shader file not found!");
-            }
-            return std::string{(std::istreambuf_iterator<char>(fs)),
-                               std::istreambuf_iterator<char>()};
-        };
+        shader_programs(
+            "brute_force_shader",
+            ShaderProgram::read_shader_source("shader/simple_2D.vert"),
+            ShaderProgram::read_shader_source("shader/drawing.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .bind_texture("site_info", 0);
+        shader_programs(
+            "draw_texture",
+            ShaderProgram::read_shader_source("shader/simple_2D.vert"),
+            ShaderProgram::read_shader_source("shader/draw_texture.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .bind_texture("site_info", 0)
+            .bind_texture("board", 1);
+        shader_programs(
+            "JFA", ShaderProgram::read_shader_source("shader/simple_2D.vert"),
+            ShaderProgram::read_shader_source("shader/JFA.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height)
+            .bind_texture("site_info", 0)
+            .bind_texture("board", 1);
 
-        shader_programs("brute_force_shader",
-                        read_shader_source("shader/simple_2D.vert"),
-                        read_shader_source("shader/drawing.frag"))
+        shader_programs(
+            "Lloyd", ShaderProgram::read_shader_source("shader/simple_2D.vert"),
+            ShaderProgram::read_shader_source("shader/Lloyd.frag"))
             .set_uniform_value<GLfloat>("canvas_size", canvas_width,
                                         canvas_height)
-            .set_uniform_value<GLint>("site_info", 0);
-        shader_programs("draw_texture",
-                        read_shader_source("shader/simple_2D.vert"),
-                        read_shader_source("shader/draw_texture.frag"))
-            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
-                                        canvas_height)
-            .set_uniform_value<GLint>("site_info", 0)
-            .set_uniform_value<GLint>("board", 1);
-        shader_programs("JFA", read_shader_source("shader/simple_2D.vert"),
-                        read_shader_source("shader/JFA.frag"))
-            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
-                                        canvas_height)
-            .set_uniform_value<GLint>("site_info", 0)
-            .set_uniform_value<GLint>("board", 1);
+            .bind_texture("site_info", 0)
+            .bind_texture("board", 1)
+            .bind_texture("prev_sites", 2);
 
-        shader_programs("Lloyd", read_shader_source("shader/simple_2D.vert"),
-                        read_shader_source("shader/Lloyd.frag"))
-            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
-                                        canvas_height)
-            .set_uniform_value<GLint>("site_info", 0)
-            .set_uniform_value<GLint>("board", 1)
-            .set_uniform_value<GLint>("prev_sites", 2);
+        GLuint sampler;
+        glGenSamplers(1, &sampler);
+        glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glBindSampler(0, sampler);
+        glBindSampler(1, sampler);
+        glBindSampler(2, sampler);
 
         std::cout << "Shader compilation success.\n";
     }

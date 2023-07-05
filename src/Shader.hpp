@@ -2,6 +2,7 @@
 #define VD_SHADER_
 
 #include <GLES3/gl3.h>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -82,6 +83,10 @@ class ShaderProgram {
 
     ShaderProgram& bind_uniform_block(const std::string& name,
                                       GLuint uniform_bloc_binding);
+
+    ShaderProgram& bind_texture(const std::string& name, GLuint texture_index);
+
+    static std::string read_shader_source(const std::string& path);
 };
 
 auto ShaderProgram::err_check(GLuint id, int t, const std::string& err) {
@@ -168,5 +173,21 @@ ShaderProgram& ShaderProgram::bind_uniform_block(const std::string& name,
                           uniform_bloc_binding);
     return *this;
 }
+
+ShaderProgram& ShaderProgram::bind_texture(const std::string& name,
+                                           GLuint texture_index) {
+    set_uniform_value<GLint>(name, texture_index);
+    return *this;
+}
+
+std::string ShaderProgram::read_shader_source(const std::string& path) {
+    std::ifstream fs(path);
+    if (!fs.is_open()) {
+        std::cout << "Can not open shader source file: " << path << '\n';
+        throw std::runtime_error("Shader file not found!");
+    }
+    return std::string{(std::istreambuf_iterator<char>(fs)),
+                       std::istreambuf_iterator<char>()};
+};
 
 #endif  // VD_SHADER_
