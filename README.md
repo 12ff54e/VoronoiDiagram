@@ -17,3 +17,4 @@ A Demo showing Voronoi Diagram using fragment shader via Emscripten.
 - [ ] Hardware aware texture size
 - [x] FSAA
 - [ ] Voronoi texture on some 2D manifolds
+- [x] Various metric function
