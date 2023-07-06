@@ -47,8 +47,7 @@ struct State {
         auto then = std::exchange(time_points[idx], now);
         idx = (idx + 1) % len;
 
-        return static_cast<double>(len + 1) /
-               std::chrono::duration<double>(now - then).count();
+        return len / std::chrono::duration<double>(now - then).count();
     }
 };
 
