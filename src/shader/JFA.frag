@@ -22,20 +22,21 @@ void dist_periodic(in vec2 p1, in vec2 p2, in bool periodic_x, in bool periodic_
     for(int i = -int(periodic_x); i <= int(periodic_x); ++i) {
         for(int j = -int(periodic_y); j <= int(periodic_y); ++j) {
             float d;
+            vec2 p2_dummy = p2 + MASS_canvas_size * vec2(i, j);
             switch(metric) {
                 case 0u: // Manhattan
-                    d = dot(abs(p1 - (p2 + MASS_canvas_size * vec2(i, j))), vec2(1));
+                    d = dot(abs(p1 - p2_dummy), vec2(1));
                     break;
                 case 1u: // Euclidean
-                    d = distance(p1, p2 + MASS_canvas_size * vec2(i, j));
+                    d = distance(p1, p2_dummy);
                     break;
                 case 2u: // Min
-                    p1 = abs(p1 - (p2 + MASS_canvas_size * vec2(i, j)));
-                    d = min(p1.x, p1.y);
+                    p2_dummy = abs(p1 - p2_dummy);
+                    d = min(p2_dummy.x, p2_dummy.y);
                     break;
                 case 3u: // Max
-                    p1 = abs(p1 - (p2 + MASS_canvas_size * vec2(i, j)));
-                    d = max(p1.x, p1.y);
+                    p2_dummy = abs(p1 - p2_dummy);
+                    d = max(p2_dummy.x, p2_dummy.y);
                     break;
             }
             dist = min(dist, d);
