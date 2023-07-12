@@ -5,7 +5,7 @@ project(BSplineDemo VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_executable(index src/main.cpp)
+add_executable(index src/main.cpp src/Cone.cpp)
 set_target_properties(index PROPERTIES SUFFIX .html)
 
 string(JOIN "" shell_file ${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html)
@@ -16,6 +16,7 @@ target_link_options(index PUBLIC -sOFFSCREENCANVAS_SUPPORT) # off screen canvas
 target_link_options(index PUBLIC --embed-file ${CMAKE_CURRENT_SOURCE_DIR}/src/shader@shader) # embed shader source files
 target_compile_options(index PUBLIC -fwasm-exceptions) # allow exceptions
 target_link_options(index PUBLIC -fwasm-exceptions) # allow exceptions
+target_include_directories(index PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # target_compile_definitions(index PUBLIC "EXPLICIT_SWAP")
 
 target_compile_options(index PUBLIC -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-pre-c++14-compat -Wno-exit-time-destructors -Wno-padded -Wno-unsafe-buffer-usage -Wno-dollar-in-identifier-extension)
@@ -27,7 +28,7 @@ set_property(TARGET index PROPERTY LINK_DEPENDS ${shader_src} ${shell_file})
 
 include(CTest)
 # Specify tests
-list(APPEND tests "vec-test")
+list(APPEND tests vec-test util-test)
 
 list(LENGTH tests test_num)
 message(STATUS)

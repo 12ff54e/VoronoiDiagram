@@ -136,6 +136,8 @@ class VecBase {
 
     // properties
 
+    static constexpr std::size_t size() noexcept { return dim; }
+
     T L2_norm_square() const {
         T norm{};
         for (auto& c : coord) { norm += c * c; }

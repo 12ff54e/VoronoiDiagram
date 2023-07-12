@@ -1,4 +1,4 @@
-#include "../src/Vec.hpp"
+#include "../src/include/Vec.hpp"
 #include <iomanip>
 #include "Assertion.hpp"
 
@@ -36,6 +36,12 @@ int main() {
     Vec<4> v4_a;
     constexpr Vec<4> v4_b{};
     constexpr Vec<4> v4_c{1, 2, 3};
+
+    auto func = [&](const std::array<int, 3>& array) {
+        assertion(array == std::array<int, 3>{2, 2, 2},
+                  "Convert Vec to array failed.");
+    };
+    func(v3_a);
 
     return assertion.status();
 }

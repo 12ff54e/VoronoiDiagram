@@ -7,7 +7,7 @@ A Demo showing Voronoi Diagram using fragment shader via Emscripten.
 - [x] Brute force
 - [x] Draw frame
 - [ ] Fortune's Algorithm (Visualization)
-- [ ] Cone Algorithm
+- [x] Cone Algorithm
 - [x] Jump Flood Algorithm
 - [ ] Parallel Banding Algorithm
 - [x] Lloyd Algorithm

@@ -6,8 +6,9 @@
 #include <memory>      // std::unique_ptr
 #include <random>  // std::random_device, std::mt19937, std::uniform_real_distribution
 #include <vector>  // std::vector
-#include "Shader.hpp"
-#include "Vec.hpp"
+#include "include/Cone.hpp"
+#include "include/Shader.hpp"
+#include "include/Vec.hpp"
 
 // global constants
 
@@ -15,6 +16,12 @@
 constexpr int canvas_width = 1920;
 constexpr int canvas_height = 1080;
 constexpr unsigned MAX_ARRAY_SIZE = 4096;
+
+enum class Method {
+    BRUTE_FORCE,
+    JFA,
+    CONE,
+};
 
 struct DeviceObjects {
     GLuint screen_quad_vao;
@@ -26,7 +33,7 @@ struct DeviceObjects {
 };
 
 struct State {
-    bool brute_force;
+    Method method;
     GLuint style;
     GLuint line_width;
     unsigned frame;
@@ -360,41 +367,71 @@ static void draw() {
         state.reset_update_site_range();
     }
 
-    if (state.brute_force) {
-        // set background color to grey
-        glClearColor(0.3f, 0.3f, 0.3f, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT);
+    switch (state.method) {
+        case Method::BRUTE_FORCE: {
+            glDisable(GL_DEPTH_TEST);
 
-        shader_programs("brute_force_shader")
-            .set_uniform_value<GLuint>("site_num", current_sites.size())
-            .set_uniform_value<GLuint>("style", state.style)
-            .set_uniform_value<GLfloat>("line_width",
-                                        static_cast<float>(state.line_width) /
-                                            static_cast<float>(canvas_height))
-            .set_uniform_value<GLfloat>("line_color", 0, 0, 0);
-    } else {
-        auto board = voronoi_tesselation();
-        lloyd(board);
+            shader_programs("brute_force_shader")
+                .set_uniform_value<GLuint>("site_num", current_sites.size())
+                .set_uniform_value<GLuint>("style", state.style)
+                .set_uniform_value<GLfloat>(
+                    "line_width", static_cast<float>(state.line_width) /
+                                      static_cast<float>(canvas_height))
+                .set_uniform_value<GLfloat>("line_color", 0, 0, 0)
+                .use();
+            break;
+        }
+        case Method::JFA: {
+            auto board = voronoi_tesselation();
+            lloyd(board);
 
-        shader_programs("draw_texture")
-            .set_uniform_value<GLuint>("site_num", current_sites.size())
-            .set_uniform_value<GLuint>("style", state.style)
-            .set_uniform_value<GLuint>("FSAA_factor", state.FSAA_factor);
+            shader_programs("draw_texture")
+                .set_uniform_value<GLuint>("site_num", current_sites.size())
+                .set_uniform_value<GLuint>("style", state.style)
+                .set_uniform_value<GLuint>("FSAA_factor", state.FSAA_factor)
+                .use();
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, board);
-        // switch render target back to screen
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, device_object.sites_texture);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, board);
+            // switch render target back to screen
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            break;
+        }
+        case Method::CONE: {
+            glEnable(GL_DEPTH_TEST);
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            std::vector<Cone> cones;
+            cones.reserve(current_sites.size());
+            double rr = std::sqrt(canvas_width * canvas_width +
+                                  canvas_height * canvas_height);
+            double rx = 2 * rr / canvas_width;
+            double ry = 2 * rr / canvas_height;
+            for (auto& site : current_sites) {
+                cones.emplace_back(Vec<3, float>{2 * site.pos.x() - 1,
+                                                 2 * site.pos.y() - 1, -1},
+                                   site.color, rx, ry, 2);
+            }
+            shader_programs("Cone")
+                .set_uniform_value<GLuint>("style", state.style)
+                .set_uniform_value<GLuint>("site_num", current_sites.size())
+                .use();
+
+            Cone::draw();
+            break;
+        }
     }
 
-    // restore viewport to canvas size
-    glViewport(0, 0, canvas_width, canvas_height);
+    if (state.method != Method::CONE) {
+        // restore viewport to canvas size
+        glViewport(0, 0, canvas_width, canvas_height);
 
-    // Draw the full-screen quad, to let OpenGL invoke fragment shader
-    glBindVertexArray(device_object.screen_quad_vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        // Draw the full-screen quad, to let OpenGL invoke fragment shader
+        glBindVertexArray(device_object.screen_quad_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
 
     EM_ASM(document.getElementById("fps").textContent = `${$0.toFixed(2)} fps`,
            state.fps());
@@ -410,17 +447,17 @@ EMSCRIPTEN_KEEPALIVE void alter_state(bool,
                                       bool,
                                       bool,
                                       bool,
-                                      bool,
+                                      unsigned,
                                       unsigned,
                                       unsigned,
                                       std::size_t,
                                       GLuint,
                                       double);
-void alter_state(bool brute_force,
-                 bool draw_site,
+void alter_state(bool draw_site,
                  bool draw_frame,
                  bool periodic_x,
                  bool periodic_y,
+                 unsigned method,
                  unsigned FSAA,
                  unsigned metric,
                  std::size_t site_num,
@@ -440,7 +477,7 @@ void alter_state(bool brute_force,
         state.update_site_range = {0, site_num};
         state.timestamp = timestamp;
     }
-    state.brute_force = brute_force;
+    state.method = static_cast<Method>(method);
     state.FSAA_factor = FSAA;
 }
 }
@@ -499,6 +536,12 @@ int main() {
             .bind_texture("site_info", 0)
             .bind_texture("board", 1)
             .bind_texture("prev_sites", 2);
+
+        shader_programs("Cone",
+                        ShaderProgram::read_shader_source("shader/cones.vert"),
+                        ShaderProgram::read_shader_source("shader/cones.frag"))
+            .set_uniform_value<GLfloat>("canvas_size", canvas_width,
+                                        canvas_height);
 
         GLuint sampler;
         glGenSamplers(1, &sampler);

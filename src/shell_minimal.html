@@ -125,6 +125,11 @@
             >JFA/Lloyd</label
           >
         </div>
+        <div>
+          <input type="radio" name="method" value="CONE" /><label for="CONE"
+            >CONE</label
+          >
+        </div>
       </fieldset>
       <div style="grid-column: auto / span 2">
         <input
@@ -263,12 +268,18 @@
       });
 
       function alter_state() {
+        let method_index = 0;
+        for (; method_index < method_selection.length; ++method_index) {
+          if (method_selection[method_index].checked) {
+            break;
+          }
+        }
         _alter_state(
-          method_selection[0].checked, // using brute force method of JFA
           draw_site.checked, // whether draw site
           draw_frame.checked, // whether draw frame
           periodic_x.checked, // periodicity in x direction
           periodic_y.checked, // periodicity in y direction
+          method_index, // method
           parseInt(FSAA.value), // FSAA factor
           parseInt(Metric.value), // metric function
           parseInt(site_num.value), // number of sites
@@ -378,15 +389,14 @@
         };
       };
 
-      method_selection.forEach((input) => {
+      method_selection.forEach((input, idx) => {
         input.addEventListener("input", (e) => {
           if (e.target.checked) {
-            const old_method = e.target.value === "brute_force";
             alter_state.call(e.target);
             [draw_frame, line_width, download_frame].forEach((i) => {
-              i.disabled = !old_method;
+              i.disabled = e.target.value !== "brute_force";
             });
-            FSAA.disabled = old_method;
+            FSAA.disabled = e.target.value !== "JFA";
           }
         });
       });
